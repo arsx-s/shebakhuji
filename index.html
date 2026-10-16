@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>সেবাসাথী — আপনার বিশ্বস্ত সেবাসঙ্গী</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./mobile.css" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="theme-color" content="#1E2538" />
+</head>
+<body>
+  <div id="app" class="app-shell"></div>
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="./frontend-api.js"></script>
+  <script src="./i18n.js"></script>
+  <script>if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch(() => {});</script>
+</body>
+</html>

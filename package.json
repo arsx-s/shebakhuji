@@ -1,0 +1,9 @@
+{
+  "name": "shebashathi",
+  "private": true,
+  "version": "0.2.0",
+  "type": "commonjs",
+  "scripts": { "start": "node server.js", "check": "node --check app.js && node --check server.js && node --check frontend-api.js && node --check i18n.js && node --check scripts/build-android.js && node --check scripts/prepare-web.js", "test": "node --test", "android:prepare": "node scripts/prepare-web.js && npx cap sync android", "android:build": "node scripts/prepare-web.js && npx cap sync android && node scripts/build-android.js" },
+  "devDependencies": { "@capacitor/cli": "^7.4.0" },
+  "dependencies": { "@capacitor/core": "^7.4.0", "@capacitor/android": "^7.4.0" }
+}

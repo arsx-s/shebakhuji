@@ -1,0 +1,8 @@
+{
+  "appId": "bd.shebashathi.app",
+  "appName": "ShebaShathi",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "http"
+  }
+}

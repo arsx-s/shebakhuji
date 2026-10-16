@@ -1,0 +1,10 @@
+{
+  "name": "ShebaShathi",
+  "short_name": "সেবাসাথী",
+  "lang": "bn-BD",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F9F8F6",
+  "theme_color": "#1E2538",
+  "icons": []
+}
