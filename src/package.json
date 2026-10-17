@@ -1,0 +1,4 @@
+{
+  "//": "Marks the browser modules under src/ as ES modules so Node and tooling parse them identically to the browser.",
+  "type": "module"
+}

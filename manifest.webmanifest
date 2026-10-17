@@ -1,0 +1,20 @@
+{
+  "name": "ShebaShathi",
+  "short_name": "সেবাসাথী",
+  "description": "বাংলাদেশের বিশ্বস্ত সার্ভিস মার্কেটপ্লেস — ঘরের কাজ, মেরামত ও পেশাদার সেবা এক জায়গায়।",
+  "lang": "bn-BD",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F5F2",
+  "theme_color": "#141B2E",
+  "categories": ["business", "lifestyle", "utilities"],
+  "icons": [
+    { "src": "./assets/brand/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./assets/brand/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/brand/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/brand/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

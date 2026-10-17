@@ -1,0 +1,42 @@
+# Secrets and local environment
+.env
+
+# Local JSON database and its rotating backups (runtime state, not source)
+data/database.json
+data/backups/
+
+# Dependencies
+node_modules/
+
+# Build output
+www/
+dist/
+*.log
+
+# Web (Capacitor) build output is generated from src/ by scripts/prepare-web.js
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+
+# Android toolchain / build
+android/local.properties
+android/.gradle/
+android/app/build/
+android/build/
+.gradle/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# Editors
+.idea/
+.vscode/
+*.iml
+
+# QA tooling scratch space
+.playwright-mcp/
+
+# OS cruft
+.DS_Store
+Thumbs.db

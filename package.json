@@ -1,0 +1,24 @@
+{
+  "name": "shebashathi",
+  "private": true,
+  "version": "0.3.0",
+  "type": "commonjs",
+  "description": "ShebaShathi — bilingual (Bangla/English) service marketplace for Bangladesh.",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check sw.js && node scripts/check-modules.js && node scripts/check-assets.js && node scripts/check-forms.js && node scripts/check-blocks.js",
+    "test": "node --test",
+    "art": "node scripts/generate-art.js",
+    "data:clean-tests": "node scripts/clean-test-data.js --apply",
+    "web:prepare": "node scripts/prepare-web.js",
+    "android:prepare": "node scripts/prepare-web.js && npx cap sync android",
+    "android:build": "node scripts/prepare-web.js && npx cap sync android && node scripts/build-android.js"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.0"
+  },
+  "dependencies": {
+    "@capacitor/core": "^7.4.0",
+    "@capacitor/android": "^7.4.0"
+  }
+}
