@@ -646,3 +646,9 @@ test('notification preferences are saved and enforced by the server', async () =
     'the notification arrives once the category is enabled again'
   );
 });
+
+test('Google sign-in is disabled until configured', async () => {
+  const res = await call('/auth/google', { method: 'POST', body: { idToken: 'fake' }, cookie: '' });
+  assert.equal(res.status, 503, 'an unconfigured provider returns 503, not a fake login');
+  assert.equal(res.payload.code, 'GOOGLE_NOT_CONFIGURED');
+});

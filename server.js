@@ -280,7 +280,45 @@ async function api(req, res, url) {
   /* Account deletion: proves the password, removes personal data, revokes every
      session. Financial/booking records are retained but anonymised so the
      platform keeps its accounting and dispute history without keeping PII. */
-  if (method === 'GET' && url.pathname === '/api/public/config') return json(res, 200, { config: { map: mapConfig(), version: APP_VERSION, geocoding: { enabled: geocodeEnabled() } } });
+  /* Google sign-in: verify the ID token server-side, never trust the client. */
+  if (method === 'GET' && url.pathname === '/api/public/config') return json(res, 200, { config: { map: mapConfig(), version: APP_VERSION, geocoding: { enabled: geocodeEnabled() }, googleAuth: { enabled: Boolean(process.env.GOOGLE_CLIENT_ID) } } });
+  if (method === 'POST' && url.pathname === '/api/auth/google') {
+    if (!process.env.GOOGLE_CLIENT_ID) return json(res, 503, { error: 'Google sign-in is not configured', code: 'GOOGLE_NOT_CONFIGURED' });
+    const idToken = String(data.idToken || '').trim();
+    if (!idToken) return json(res, 400, { error: 'ID token is required' });
+    let google;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      const r = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!r.ok) return json(res, 401, { error: 'Invalid Google token', code: 'GOOGLE_INVALID' });
+      google = await r.json();
+    } catch (error) {
+      return json(res, 502, { error: 'Google verification failed', code: 'GOOGLE_UNREACHABLE' });
+    }
+    if (!google || google.aud !== process.env.GOOGLE_CLIENT_ID) return json(res, 401, { error: 'Token audience mismatch', code: 'GOOGLE_AUDIENCE' });
+    if (google.iss !== 'accounts.google.com' && google.iss !== 'https://accounts.google.com') return json(res, 401, { error: 'Invalid token issuer', code: 'GOOGLE_ISSUER' });
+    if (Number(google.exp) * 1000 < Date.now()) return json(res, 401, { error: 'Token expired', code: 'GOOGLE_EXPIRED' });
+    const email = normalizeIdentifier(google.email || '');
+    if (!email || email.type !== 'email') return json(res, 400, { error: 'Google account has no email' });
+    // Find or create user
+    let user = db.users.find((u) => u.googleSub === google.sub || u.email === email.value);
+    if (user) {
+      if (!user.googleSub) user.googleSub = google.sub;
+      if (!user.email) user.email = email.value;
+      if (!user.name && google.name) user.name = String(google.name).trim().slice(0, 120);
+    } else {
+      user = { id: id('user'), name: String(google.name || email.value.split('@')[0]).trim().slice(0, 120) || 'User', role: 'CUSTOMER', email: email.value, googleSub: google.sub, password: null, district: '', area: '', bio: '', skills: [], available: false, verified: Boolean(google.email_verified), disabled: false, createdAt: now(), preferredLanguage: 'bn', notificationPrefs: {} };
+      db.users.push(user);
+    }
+    if (user.disabled) return json(res, 403, { error: 'Account disabled', code: 'GOOGLE_DISABLED' });
+    const session = { token: id('token'), userId: user.id, createdAt: now(), expiresAt: new Date(Date.now() + SESSION_TTL).toISOString() };
+    db.sessions.push(session);
+    save();
+    const native = /^(android|ios)$/i.test(String(req.headers['x-client-platform'] || ''));
+    return json(res, 200, { user: publicUser(user), expiresAt: session.expiresAt, ...(native ? { token: session.token } : {}) });
+  }
   if (method === 'POST' && url.pathname === '/api/me/delete') {
     const user = auth(req);
     if (!user.password) return json(res, 409, { error: 'This account has no password to verify' });

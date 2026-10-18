@@ -119,7 +119,7 @@ export const api = {
   deleteAccount: (password) => post('/me/delete', { password }),
   geoSearch: (q) => get(`/geo/search?q=${encodeURIComponent(q)}`),
   geoReverse: (latitude, longitude) => get(`/geo/reverse?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`),
-  login: (identifier, password) => post('/auth/login', { identifier, password }),
+  googleLogin: (idToken) => post('/auth/google', { idToken }),
   register: (body) => post('/auth/register', body),
   logout: () => post('/auth/logout', {}),
 
