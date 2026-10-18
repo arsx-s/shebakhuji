@@ -10,16 +10,23 @@ import { bindActions, icon, register, toast, observeReveals, closeSheet } from '
 import { route, setFallback, startRouter, resolve, currentRoute, onRouteChange, go } from './router.js';
 import { publicChrome, appChrome, homeFor } from './shell.js';
 import { detachMap } from './map.js';
+import { initTheme, initMotion } from './theme.js';
+import { applyFx, installClickSpark } from './fx.js';
 
 /* view modules register their own actions on import */
 import { landing, howItWorks, providersPage, publicSupport, notFoundPublic, loadServices } from './views/public.js';
-import { openAuth, restoreSession, refreshNotifications, signOut } from './views/auth.js';
+import { openAuth, restoreSession, refreshNotifications, signOut, authView } from './views/auth.js';
 import {
   homeView, exploreView, serviceView, activityView, bookingDetailView,
   offersView, providerProfileView
 } from './views/customer.js';
 import { bookingView } from './views/booking.js';
 import { accountView, addressesView, supportView, inboxView } from './views/account.js';
+import { locationPickerView } from './views/location.js';
+import {
+  settingsView, appearanceView, languageView, motionView, notificationsView,
+  privacyView, helpView, aboutView, termsView, privacyPolicyView
+} from './views/settings.js';
 import { workView, requestsView, scheduleView, earningsView, listingsView } from './views/provider.js';
 import { adminView, adminBookingsView, adminUsersView, adminServicesView, adminSupportView, adminPayoutsView } from './views/admin.js';
 
@@ -41,10 +48,13 @@ function requireRole(role) {
 /* ---------- route table -------------------------------------------------- */
 function routes() {
   // public
-  route('/', () => (getState().user ? { redirect: homeFor(getState().user.role) } : landing()));
+  route('/', () => (getState().user ? { redirect: homeFor(getState().user.role) } : authView()));
+  route('/welcome', landing);
   route('/how-it-works', howItWorks);
   route('/providers', providersPage);
   route('/support', publicSupport);
+  route('/terms', termsView);
+  route('/privacy', privacyPolicyView);
   // Deep link for "Become a provider" / "Create account": renders the welcome
   // screen and opens the registration sheet on top of it. Dismissing the sheet
   // returns to the welcome screen, so the link is never a dead end.
@@ -67,12 +77,14 @@ function routes() {
 
   // shared
   route('/explore', exploreView);
+  route('/services', exploreView);
   route('/service/:id', serviceView);
   route('/book/:serviceId', bookingView, { guard: requireAuth });
   route('/provider/:id', providerProfileView);
 
   // customer
   route('/home', homeView, { guard: () => requireRole('CUSTOMER') });
+  route('/location', locationPickerView, { guard: requireAuth });
   route('/activity', activityView, { guard: requireAuth });
   route('/booking/:id', bookingDetailView, { guard: requireAuth });
   route('/offers/:requestId', offersView, { guard: requireAuth });
@@ -80,6 +92,14 @@ function routes() {
   route('/account', accountView, { guard: requireAuth });
   route('/account/addresses', addressesView, { guard: requireAuth });
   route('/account/support', supportView, { guard: requireAuth });
+  route('/settings', settingsView, { guard: requireAuth });
+  route('/settings/appearance', appearanceView, { guard: requireAuth });
+  route('/settings/language', languageView, { guard: requireAuth });
+  route('/settings/motion', motionView, { guard: requireAuth });
+  route('/settings/notifications', notificationsView, { guard: requireAuth });
+  route('/settings/privacy', privacyView, { guard: requireAuth });
+  route('/settings/help', helpView, { guard: requireAuth });
+  route('/settings/about', aboutView, { guard: requireAuth });
 
   // provider
   route('/work', workView, { guard: () => requireRole('WORKER') });
@@ -148,6 +168,7 @@ async function render() {
   root().innerHTML = result.chrome === 'app' ? appChrome({ body, active: result.active, full: result.full }) : publicChrome({ body, active: result.active });
   document.title = `${t('brand.name')} — ${t('brand.tagline')}`;
   observeReveals();
+  applyFx(root());
   if (typeof result.after === 'function') result.after();
   // move focus for screen readers without yanking the viewport on hash-only nav
   const main = document.getElementById('main');
@@ -190,16 +211,16 @@ function registerGlobalActions() {
   register('sheet-close', () => closeSheet());
   register('retry', () => { window.dispatchEvent(new HashChangeEvent('hashchange')); });
 
-  // search forms (hero + explore + home)
+  // search forms (hero + services + home)
   document.addEventListener('submit', (event) => {
     const form = event.target.closest('[data-role="search-form"], [data-role="hero-search"]');
     if (!form) return;
     event.preventDefault();
     const q = new FormData(form).get('q') || '';
-    window.location.hash = `#/explore?q=${encodeURIComponent(String(q))}`;
+    window.location.hash = `#/services?q=${encodeURIComponent(String(q))}`;
   });
 
-  // explore filter form
+  // services filter form
   document.addEventListener('submit', (event) => {
     const form = event.target.closest('[data-role="explore-filters"]');
     if (!form) return;
@@ -210,7 +231,7 @@ function registerGlobalActions() {
     if (data.get('available')) params.set('available', '1');
     const existing = new URLSearchParams((window.location.hash.split('?')[1] || '')).get('category');
     if (existing) params.set('category', existing);
-    window.location.hash = `#/explore?${params.toString()}`;
+    window.location.hash = `#/services?${params.toString()}`;
   });
 
   document.addEventListener('keydown', (event) => {
@@ -223,6 +244,8 @@ function registerGlobalActions() {
 /* ---------- boot --------------------------------------------------------- */
 async function boot() {
   initLang();
+  initTheme();
+  initMotion();
   bindActions();
   routes();
   registerGlobalActions();
@@ -258,6 +281,7 @@ async function boot() {
   await refreshNotifications();
   startNotificationPolling();
   registerServiceWorker();
+  installClickSpark();
 }
 
 /* Offline shell. Skipped on file:// (Capacitor bundles the app locally) and

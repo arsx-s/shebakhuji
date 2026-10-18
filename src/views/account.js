@@ -12,15 +12,6 @@ import { getLang, setLang, formatDate, formatDateTime } from '../i18n.js';
 import { signOut, refreshNotifications } from './auth.js';
 import { openChat, isOpen } from './customer.js';
 
-const NOTIFY_KEY = 'shebashathi.notify';
-
-function notifyPref() {
-  try { return localStorage.getItem(NOTIFY_KEY) !== 'off'; } catch { return true; }
-}
-function setNotifyPref(on) {
-  try { localStorage.setItem(NOTIFY_KEY, on ? 'on' : 'off'); } catch { /* ignore */ }
-}
-
 /* ======================= account ======================================== */
 export async function accountView() {
   const state = getState();
@@ -89,10 +80,9 @@ export async function accountView() {
             </div>
           </div>
           <hr class="divider" />
-          <div class="row-between">
-            <div><b>${esc(t('account.notifications'))}</b><p class="muted small">${esc(t('account.notificationsNote'))}</p></div>
-            <input type="checkbox" class="switch" data-action="toggle-notify" ${notifyPref() ? 'checked' : ''} aria-label="${esc(t('account.notifications'))}" />
-          </div>
+          <a class="list-item" href="#/settings" style="text-decoration:none;padding:0;border-bottom:0">
+            <span class="row"><span class="icon-badge ink">${icon('Settings')}</span><b>${esc(t('settings.title'))}</b><span class="muted small" style="margin-left:8px">${esc(t('settings.sub'))}</span></span>${icon('Chevron_Right')}
+          </a>
         </div>
       </section>
 
@@ -108,6 +98,9 @@ export async function accountView() {
             </a>
             <a class="list-item" href="#/account/support" style="text-decoration:none">
               <span class="row"><span class="icon-badge ink">${icon('Headphones')}</span><b>${esc(t('account.support'))}</b></span>${icon('Chevron_Right')}
+            </a>
+            <a class="list-item" href="#/settings" style="text-decoration:none">
+              <span class="row"><span class="icon-badge ink">${icon('Settings')}</span><b>${esc(t('settings.title'))}</b></span>${icon('Chevron_Right')}
             </a>
             ${isWorker ? `<a class="list-item" href="#/listings" style="text-decoration:none">
               <span class="row"><span class="icon-badge ink">${icon('Shopping_Bag_01')}</span><b>${esc(t('provider.listingsTitle'))}</b></span>${icon('Chevron_Right')}
@@ -356,7 +349,7 @@ export async function inboxView(params, query = {}) {
               </div>
               ${n.bookingId ? `<button class="btn ghost sm" data-action="open-booking-detail" data-id="${esc(n.bookingId)}">${esc(t('activity.track'))}</button>` : ''}
             </div>`).join('')}</div>`
-            : emptyState({ art: 'assets/illustrations/empty-messages.svg', title: t('inbox.noAlerts'), body: t('inbox.noAlertsBody') })}
+            : emptyState({ art: 'assets/illustrations/empty-messages.svg', title: t('inbox.emptyNotifications'), body: t('inbox.emptyNotificationsBody'), action: `<button class="btn" data-action="refresh-notifications">${esc(t('inbox.checkAgain'))}</button>` })}
         </section>`}
     </div>`;
   return { body, chrome: 'app', active: 'inbox', after: () => observeReveals() };
@@ -379,10 +372,6 @@ register('toggle-availability', async (data, event, el) => {
     toast(t(errorKey(error)), 'error');
   } finally { el.disabled = false; }
 });
-register('toggle-notify', (data, event, el) => {
-  setNotifyPref(el.checked);
-  toast(t('account.notifications') + ': ' + (el.checked ? '✓' : '—'), 'info');
-});
 register('toggle-skill', (data, event, el) => {
   const on = el.getAttribute('aria-pressed') === 'true';
   el.setAttribute('aria-pressed', String(!on));
@@ -395,6 +384,15 @@ register('mark-all-read', async () => {
     toast(t('inbox.markRead'), 'success');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   } catch (error) { toast(t(errorKey(error)), 'error'); }
+});
+
+register('refresh-notifications', async (data, event, el) => {
+  setBusy(el, true, t('common.loading'));
+  try {
+    await refreshNotifications();
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  } catch (error) { toast(t(errorKey(error)), 'error'); }
+  finally { setBusy(el, false); }
 });
 register('sign-out', async () => {
   const ok = await confirm({ title: t('account.signoutConfirm'), confirmLabel: t('account.signout'), danger: true });

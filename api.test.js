@@ -506,9 +506,143 @@ test('the app shell and its assets are served', async () => {
   const html = await shell.text();
   assert.match(html, /src\/app\.js/);
   assert.match(html, /assets\/styles\/app\.css/);
+  assert.ok(html.indexOf('shebashathi.theme') > 0, 'the appearance is restored before paint');
+  assert.equal((html.match(/<meta name="theme-color"/g) || []).length, 1, 'one theme-colour tag, updated by the app');
 
-  for (const asset of ['/src/app.js', '/src/i18n.js', '/assets/styles/app.css', '/assets/coolicons-sprite.svg', '/assets/illustrations/hero-services.svg', '/assets/brand/icon-192.png']) {
+  for (const asset of ['/src/app.js', '/src/i18n.js', '/src/theme.js', '/src/fx.js', '/assets/styles/app.css', '/assets/coolicons-sprite.svg', '/assets/illustrations/hero-services.svg', '/assets/brand/icon-192.png']) {
     const res = await fetch(`http://127.0.0.1:${PORT}${asset}`);
     assert.equal(res.status, 200, `${asset} should be served`);
   }
+});
+
+test('address search reports honestly when no geocoding provider is configured', async () => {
+  const config = await call('/public/config', { cookie: '' });
+  assert.equal(config.status, 200);
+  assert.equal(config.payload.config.geocoding.enabled, false, 'the development default has no geocoding provider');
+  assert.equal(config.payload.config.version, require('./package.json').version, 'the About screen shows the running version');
+
+  const search = await call('/geo/search?q=Dhanmondi', { cookie: '' });
+  assert.equal(search.status, 501, 'an unconfigured search is an honest 501, not an empty result list');
+  assert.equal(search.payload.code, 'GEOCODE_DISABLED');
+
+  const reverse = await call('/geo/reverse?latitude=23.7461&longitude=90.3742', { cookie: '' });
+  assert.equal(reverse.status, 501);
+
+  const bad = await call('/geo/reverse?latitude=999&longitude=0', { cookie: '' });
+  assert.equal(bad.status, 501, 'the provider check still answers before validation');
+});
+
+test('a password change proves the current password and ends other sessions', async () => {
+  const identifier = `0177${String(Date.now()).slice(-7)}`;
+  const created = await call('/auth/register', {
+    method: 'POST', cookie: '',
+    body: { identifier, name: 'পাসওয়ার্ড পরীক্ষা', role: 'CUSTOMER', password: 'FirstPass123' }
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.payload));
+
+  const first = await call('/auth/login', { method: 'POST', body: { identifier, password: 'FirstPass123' }, cookie: '' });
+  assert.equal(first.status, 200);
+  const firstCookie = first.session;
+  const second = await call('/auth/login', { method: 'POST', body: { identifier, password: 'FirstPass123' }, cookie: '' });
+  assert.equal(second.status, 200);
+  const secondCookie = second.session;
+
+  const sessions = await call('/me/sessions', { cookie: secondCookie });
+  assert.equal(sessions.status, 200);
+  assert.equal(sessions.payload.count, 2, 'both real sessions are listed');
+  for (const session of sessions.payload.sessions) {
+    assert.ok(!('token' in session) && !('userId' in session), 'a session listing never exposes tokens or identifiers');
+  }
+  assert.equal(sessions.payload.sessions.filter((s) => s.current).length, 1, 'exactly one session is marked as the current device');
+
+  const wrong = await call('/me/password', { method: 'POST', cookie: secondCookie, body: { currentPassword: 'NotThePassword1', newPassword: 'SecondPass123' } });
+  assert.equal(wrong.status, 403, 'a wrong current password is refused');
+  const short = await call('/me/password', { method: 'POST', cookie: secondCookie, body: { currentPassword: 'FirstPass123', newPassword: 'short' } });
+  assert.equal(short.status, 400);
+  const same = await call('/me/password', { method: 'POST', cookie: secondCookie, body: { currentPassword: 'FirstPass123', newPassword: 'FirstPass123' } });
+  assert.equal(same.status, 400);
+
+  const changed = await call('/me/password', { method: 'POST', cookie: secondCookie, body: { currentPassword: 'FirstPass123', newPassword: 'SecondPass123' } });
+  assert.equal(changed.status, 200, JSON.stringify(changed.payload));
+  assert.ok(changed.payload.sessionsEnded >= 1, 'the other session was ended');
+
+  const oldSession = await call('/me', { cookie: firstCookie });
+  assert.equal(oldSession.payload.user, null, 'the ended session no longer resolves to a user');
+  const keptSession = await call('/me', { cookie: secondCookie });
+  assert.ok(keptSession.payload.user, 'the session that made the change stays signed in');
+
+  const oldPassword = await call('/auth/login', { method: 'POST', body: { identifier, password: 'FirstPass123' }, cookie: '' });
+  assert.equal(oldPassword.status, 401, 'the old password no longer signs in');
+  const newPassword = await call('/auth/login', { method: 'POST', body: { identifier, password: 'SecondPass123' }, cookie: '' });
+  assert.equal(newPassword.status, 200, 'the new password does');
+
+  await call('/auth/login', { method: 'POST', body: { identifier, password: 'SecondPass123' }, cookie: '' });
+  const third = await call('/auth/login', { method: 'POST', body: { identifier, password: 'SecondPass123' }, cookie: '' });
+  const revoked = await call('/me/sessions/revoke', { method: 'POST', cookie: third.session, body: {} });
+  assert.equal(revoked.status, 200);
+  assert.ok(revoked.payload.sessionsEnded >= 1);
+  const remaining = await call('/me/sessions', { cookie: third.session });
+  assert.equal(remaining.payload.count, 1, 'only the device that asked to stay signed in remains');
+});
+
+test('notification preferences are saved and enforced by the server', async () => {
+  await loginAs('01711000001');
+
+  const muted = await call('/me', { method: 'PATCH', body: { notificationPrefs: { offers: false } } });
+  assert.equal(muted.status, 200);
+  assert.equal(muted.payload.notificationPrefs.offers, false);
+  const reread = await call('/me');
+  assert.equal(reread.payload.user.notificationPrefs.offers, false, 'the choice survives a re-read');
+
+  await loginAs('01711000002');
+  await call('/worker/availability', { method: 'PATCH', body: { available: true } });
+  await loginAs('01711000001');
+  const request = await call('/requests', {
+    method: 'POST',
+    body: {
+      service: 'Plumbing', description: 'বাথরুমের কল থেকে পানি পড়ছে',
+      district: 'Dhaka', area: 'Dhanmondi', date: new Date(Date.now() + 86400000).toISOString(), urgency: 'URGENT'
+    }
+  });
+  assert.equal(request.status, 201, JSON.stringify(request.payload));
+  const requestId = request.payload.request.id;
+
+  await loginAs('01711000002');
+  const offer = await call(`/requests/${requestId}/offers`, { method: 'POST', body: { price: 2200, eta: 'আজ বিকেলে' } });
+  assert.equal(offer.status, 201, JSON.stringify(offer.payload));
+
+  await loginAs('01711000001');
+  const inbox = await call('/notifications');
+  assert.equal(inbox.status, 200);
+  assert.equal(
+    inbox.payload.notifications.filter((n) => n.type === 'OFFER_RECEIVED' && n.entityId === requestId).length, 0,
+    'a muted category creates no notification'
+  );
+  const offers = await call(`/requests/${requestId}/offers`);
+  assert.equal(offers.payload.offers.length, 1, 'the offer itself is still recorded and visible');
+
+  const unmuted = await call('/me', { method: 'PATCH', body: { notificationPrefs: { offers: true } } });
+  assert.equal(unmuted.status, 200);
+  assert.equal(unmuted.payload.notificationPrefs.offers, true);
+
+  const secondWorkerPhone = `0189${String(Date.now()).slice(-7)}`;
+  const secondWorker = await call('/auth/register', {
+    method: 'POST', cookie: '',
+    body: { identifier: secondWorkerPhone, name: 'রফিক আহমেদ', role: 'WORKER', password: 'TestPass123' }
+  });
+  assert.equal(secondWorker.status, 201, JSON.stringify(secondWorker.payload));
+  await loginAs(secondWorkerPhone, 'TestPass123');
+  await call('/me', { method: 'PATCH', body: { skills: ['Plumbing'] } });
+  await call('/worker/availability', { method: 'PATCH', body: { available: true } });
+
+  await loginAs(secondWorkerPhone, 'TestPass123');
+  const secondOffer = await call(`/requests/${requestId}/offers`, { method: 'POST', body: { price: 2400, eta: 'আগামীকাল সকালে' } });
+  assert.equal(secondOffer.status, 201, JSON.stringify(secondOffer.payload));
+
+  await loginAs('01711000001');
+  const after = await call('/notifications');
+  assert.ok(
+    after.payload.notifications.some((n) => n.type === 'OFFER_RECEIVED' && n.entityId === requestId),
+    'the notification arrives once the category is enabled again'
+  );
 });

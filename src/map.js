@@ -18,6 +18,7 @@
  */
 import { api } from './api.js';
 import { getLang } from './i18n.js';
+import { prefersReducedMotion } from './theme.js';
 
 /* Resolved against this module's own URL, so the paths stay correct whether the
    app is served from the site root or from a nested Capacitor origin. */
@@ -189,6 +190,12 @@ function createInstance(maplibregl, styleUrl, center) {
     applyPlaceToMap({ lat: event.lngLat.lat, lng: event.lngLat.lng, source: 'pin' });
     if (instance.onPick) instance.onPick({ lat: event.lngLat.lat, lng: event.lngLat.lng });
   });
+  /* Centre-pin mode reports the place under the pin after the pan settles. */
+  map.on('moveend', () => {
+    if (!instance.centerPin || !instance.onCenter) return;
+    const center = map.getCenter();
+    instance.onCenter({ lat: center.lat, lng: center.lng });
+  });
   return instance;
 }
 
@@ -247,6 +254,54 @@ export function setPickMode(on, onPick) {
   instance.pickMode = Boolean(on);
   instance.onPick = onPick || null;
   instance.container.style.cursor = on ? 'crosshair' : '';
+}
+
+/* ---------- centre pin (the dedicated location picker) ------------------- *
+   The pin is fixed to the middle of the container and the candidate location
+   is read from `map.getCenter()`, so the coordinates always belong to the
+   place under the pin rather than to a screen position that happens to look
+   right after a pan. */
+export function setCenterPinMode(on, onCenter) {
+  if (!instance) return;
+  instance.centerPin = Boolean(on);
+  instance.onCenter = onCenter || null;
+  let pin = instance.container.querySelector('[data-role="map-center-pin"]');
+  if (on && !pin) {
+    pin = document.createElement('div');
+    pin.className = 'map-center-pin';
+    pin.setAttribute('data-role', 'map-center-pin');
+    pin.setAttribute('aria-hidden', 'true');
+    instance.container.append(pin);
+  }
+  if (pin) pin.hidden = !on;
+  if (on && onCenter) {
+    const center = instance.map.getCenter();
+    onCenter({ lat: center.lat, lng: center.lng });
+  }
+}
+
+export function getMapCenter() {
+  if (!instance) return null;
+  const center = instance.map.getCenter();
+  return { lat: center.lat, lng: center.lng };
+}
+
+/** Move the camera without changing the saved place (search results, recenter). */
+export function setMapView(lat, lng, { zoom } = {}) {
+  if (!instance || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  try {
+    instance.map.easeTo({
+      center: [lng, lat],
+      zoom: Number.isFinite(zoom) ? zoom : Math.max(instance.map.getZoom(), DEFAULT_ZOOM),
+      duration: prefersReducedMotion() ? 0 : 600
+    });
+  } catch { /* map removed */ }
+}
+
+/** Zoom in/out from the picker controls (the map controls stay usable too). */
+export function zoomBy(delta) {
+  if (!instance) return;
+  try { instance.map.easeTo({ zoom: instance.map.getZoom() + delta, duration: prefersReducedMotion() ? 0 : 220 }); } catch { /* map removed */ }
 }
 
 /* ---------- markers ----------------------------------------------------- */
@@ -318,12 +373,6 @@ export function clearMapPlace() {
   if (!instance) return;
   instance.place = null;
   redrawMarkers();
-}
-
-function prefersReducedMotion() {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 /* ---------- capability probe ------------------------------------------- */

@@ -10,6 +10,9 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 7;
 const AUTH_MODE = process.env.AUTH_MODE || (process.env.NODE_ENV === 'production' ? 'provider' : 'development');
+/* The About screen shows the version the server is actually running, so it
+   comes from the package manifest rather than a hardcoded string in the UI. */
+const APP_VERSION = (() => { try { return require('./package.json').version || null; } catch { return null; } })();
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}_${crypto.randomUUID()}`;
 const hash = (value, salt = crypto.randomBytes(16).toString('hex')) => ({ salt, digest: crypto.scryptSync(value, salt, 64).toString('hex') });
@@ -51,6 +54,59 @@ function mapConfig() {
       : 'Map disabled: set MAP_STYLE_URL to a MapLibre style JSON URL, or unset it to use the development default.'
   };
 }
+
+/* ---- geocoding ----------------------------------------------------------
+   MapLibre renders a map but cannot search an address, and inventing a label
+   would be worse than not offering search at all. Address search therefore
+   needs a real geocoding provider, configured with `MAP_GEOCODE_URL`
+   (a Nominatim-compatible base URL). It is proxied through the server so the
+   provider's usage policy headers can be set and any credential stays off the
+   client. Unset means "not available": the API answers 501 and the location
+   picker tells the person to place the pin themselves instead of pretending
+   that search worked. */
+const GEOCODE_URL = String(process.env.MAP_GEOCODE_URL || '').trim().replace(/\/+$/, '');
+const GEOCODE_LIMIT = 8;
+const GEOCODE_TIMEOUT = 6000;
+function geocodeEnabled() {
+  if (!GEOCODE_URL) return false;
+  try { const parsed = new URL(GEOCODE_URL); return parsed.protocol === 'https:' || parsed.protocol === 'http:'; } catch { return false; }
+}
+async function geocodeRequest(pathname, params) {
+  const query = new URLSearchParams(params);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEOCODE_TIMEOUT);
+  try {
+    const response = await fetch(`${GEOCODE_URL}${pathname}?${query.toString()}`, {
+      signal: controller.signal,
+      headers: {
+        accept: 'application/json',
+        /* Nominatim requires an identifying agent; the operator can override it. */
+        'user-agent': process.env.MAP_GEOCODE_AGENT || 'ShebaShathi/1.0 (+https://github.com/arsx-s/shebakhuji)'
+      }
+    });
+    if (!response.ok) throw Object.assign(new Error('Geocoding provider error'), { status: 502 });
+    return await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') throw Object.assign(new Error('Geocoding provider timed out'), { status: 504 });
+    throw Object.assign(new Error('Geocoding provider unreachable'), { status: 502 });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+/* Normalisers keep the client's shape stable whatever the provider calls its
+   fields (results[]/display_name, or address{...}). */
+function geocodeResult(row) {
+  const lat = Number(row.lat ?? (row.geometry && row.geometry.lat));
+  const lng = Number(row.lon ?? (row.geometry && row.geometry.lng));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const address = row.address || {};
+  return {
+    label: String(row.display_name || row.label || '').slice(0, 240),
+    area: String(address.suburb || address.neighbourhood || address.village || address.town || address.city_district || '').slice(0, 120),
+    district: String(address.city || address.state_district || address.county || address.state || '').slice(0, 120),
+    lat, lng
+  };
+}
 function userByIdentifier(identifier) { return db.users.find(u => u[identifier.type] === identifier.value); }
 function json(res, status, payload) { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(payload)); }
 async function body(req) { let data = ''; for await (const chunk of req) data += chunk; try { return data ? JSON.parse(data) : {}; } catch { throw Object.assign(new Error('Invalid JSON'), { status: 400 }); } }
@@ -66,7 +122,41 @@ function publicUser(u) { const { password, ...safe } = u; return safe; }
 const sseClients = new Set();
 function distanceKm(aLat, aLng, bLat, bLng) { const rad = Math.PI / 180; const dLat = (bLat - aLat) * rad, dLng = (bLng - aLng) * rad; const a = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(dLng / 2) ** 2; return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); }
 function emitEvent(event, audience = null) { const payload = `data: ${JSON.stringify(event)}\n\n`; for (const client of sseClients) if (!audience || audience.includes(client.userId)) client.write(payload); }
-function addNotification(userId, type, message, entityId = null) { const notification = { id: id('note'), userId, type, message, entityId, read: false, createdAt: now() }; db.notifications.push(notification); emitEvent({ type: 'notification', notification }, [userId]); return notification; }
+/* ---- notifications ------------------------------------------------------
+   Every notification belongs to a category the person can mute. A muted
+   category is not stored at all, so the preference is enforced server-side
+   rather than by hiding rows in the client. */
+const NOTIFICATION_CATEGORIES = ['bookings', 'offers', 'messages', 'payments', 'support'];
+const NOTIFICATION_CATEGORY = {
+  BOOKING: 'bookings',
+  BOOKING_STATUS: 'bookings',
+  NEW_REQUEST: 'bookings',
+  DISPATCH: 'bookings',
+  OFFER_RECEIVED: 'offers',
+  PROJECT: 'offers',
+  MESSAGE: 'messages',
+  PAYOUT: 'payments',
+  SUPPORT: 'support'
+};
+function notificationPrefs(user) {
+  const saved = (user && user.notificationPrefs) || {};
+  const prefs = {};
+  for (const category of NOTIFICATION_CATEGORIES) prefs[category] = saved[category] !== false;
+  return prefs;
+}
+function wantsNotification(user, type) {
+  const category = NOTIFICATION_CATEGORY[type];
+  if (!category) return true;
+  return notificationPrefs(user)[category];
+}
+function addNotification(userId, type, message, entityId = null) {
+  const user = db.users.find(u => u.id === userId);
+  if (!user || !wantsNotification(user, type)) return null;
+  const notification = { id: id('note'), userId, type, message, entityId, read: false, createdAt: now() };
+  db.notifications.push(notification);
+  emitEvent({ type: 'notification', notification }, [userId]);
+  return notification;
+}
 function recurringDates(start, frequency, count) { const dates = []; const cursor = new Date(start); if (Number.isNaN(cursor.getTime())) return dates; for (let i = 0; i < count; i += 1) { dates.push(new Date(cursor)); if (frequency === 'WEEKLY') cursor.setDate(cursor.getDate() + 7); else cursor.setMonth(cursor.getMonth() + 1); } return dates; }
 function bookingConflict(workerId, date) { const target = new Date(date).getTime(); return db.bookings.some(b => b.workerId === workerId && !['COMPLETED', 'CANCELLED'].includes(b.status) && Math.abs(new Date(db.requests.find(r => r.id === b.requestId)?.date || 0).getTime() - target) < 60 * 60 * 1000); }
 function validPromo(code, customerId, subtotal) { const promo = db.promotions.find(p => p.code.toLowerCase() === String(code || '').trim().toLowerCase() && p.active); if (!promo || (promo.expiresAt && new Date(promo.expiresAt) < new Date()) || subtotal < (promo.minimumPaisa || 0) || (promo.maxUses != null && promo.usedCount >= promo.maxUses) || db.promotionRedemptions.some(r => r.promotionId === promo.id && r.customerId === customerId && promo.singleUse)) return null; const discount = promo.type === 'percentage' ? Math.min(subtotal, Math.round(subtotal * promo.valueBps / 10000)) : Math.min(subtotal, promo.valuePaisa); return { promo, discount }; }
@@ -128,9 +218,66 @@ async function api(req, res, url) {
   if (method === 'POST' && url.pathname === '/api/auth/login') { const identifier = normalizeIdentifier(data.identifier); const user = identifier && userByIdentifier(identifier); if (!user || !user.password || !verifyHash(String(data.password || ''), user.password)) return json(res, 401, { error: 'Invalid credentials' }); if (!user.verified) return json(res, 403, { error: 'Identity is not verified' }); if (user.disabled) return json(res, 403, { error: 'Account is disabled' }); const session = { token: crypto.randomBytes(32).toString('hex'), userId: user.id, createdAt: now(), expiresAt: new Date(Date.now() + SESSION_TTL).toISOString() }; db.sessions.push(session); save(); res.setHeader('set-cookie', `session=${session.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL / 1000}`); const native = /^(android|ios)$/i.test(String(req.headers['x-client-platform'] || '')); return json(res, 200, { user: publicUser(user), expiresAt: session.expiresAt, ...(native ? { token: session.token } : {}) }); }
   if (method === 'POST' && url.pathname === '/api/auth/logout') { const raw = token(req); db.sessions = db.sessions.filter(s => s.token !== raw); save(); res.setHeader('set-cookie', 'session=; HttpOnly; Max-Age=0; Path=/'); return json(res, 200, { ok: true }); }
   if (method === 'GET' && url.pathname === '/api/me') { const user = optionalAuth(req); return json(res, 200, { user: user ? publicUser(user) : null }); }
-  if (method === 'PATCH' && url.pathname === '/api/me') { const user = auth(req); if (data.name != null) { const name = String(data.name).trim().slice(0, 120); if (name.length < 2) return json(res, 400, { error: 'Name is required' }); user.name = name; } if (data.district != null) user.district = String(data.district).trim().slice(0, 120); if (data.area != null) user.area = String(data.area).trim().slice(0, 200); if (data.bio != null) user.bio = String(data.bio).slice(0, 1000); if (data.preferredLanguage != null && ['bn', 'en'].includes(data.preferredLanguage)) user.preferredLanguage = data.preferredLanguage; if (Array.isArray(data.skills) && user.role === 'WORKER') user.skills = data.skills.map(s => String(s).trim()).filter(Boolean).slice(0, 12); if (data.email != null) { const email = normalizeIdentifier(data.email); if (!email || email.type !== 'email') return json(res, 400, { error: 'Invalid email address' }); if (db.users.some(u => u.id !== user.id && u.email === email.value)) return json(res, 409, { error: 'Email already in use' }); user.email = email.value; } if (data.avatarDataUrl != null && String(data.avatarDataUrl).startsWith('data:image/')) { const value = String(data.avatarDataUrl); if (value.length < 400000) user.avatarDataUrl = value; } save(); return json(res, 200, { user: publicUser(user) }); }
+  if (method === 'PATCH' && url.pathname === '/api/me') { const user = auth(req); if (data.name != null) { const name = String(data.name).trim().slice(0, 120); if (name.length < 2) return json(res, 400, { error: 'Name is required' }); user.name = name; } if (data.district != null) user.district = String(data.district).trim().slice(0, 120); if (data.area != null) user.area = String(data.area).trim().slice(0, 200); if (data.bio != null) user.bio = String(data.bio).slice(0, 1000); if (data.preferredLanguage != null && ['bn', 'en'].includes(data.preferredLanguage)) user.preferredLanguage = data.preferredLanguage; if (Array.isArray(data.skills) && user.role === 'WORKER') user.skills = data.skills.map(s => String(s).trim()).filter(Boolean).slice(0, 12); if (data.email != null) { const email = normalizeIdentifier(data.email); if (!email || email.type !== 'email') return json(res, 400, { error: 'Invalid email address' }); if (db.users.some(u => u.id !== user.id && u.email === email.value)) return json(res, 409, { error: 'Email already in use' }); user.email = email.value; } if (data.avatarDataUrl != null && String(data.avatarDataUrl).startsWith('data:image/')) { const value = String(data.avatarDataUrl); if (value.length < 400000) user.avatarDataUrl = value; } if (data.notificationPrefs && typeof data.notificationPrefs === 'object') { const next = notificationPrefs(user); let touched = false; for (const category of NOTIFICATION_CATEGORIES) { if (typeof data.notificationPrefs[category] === 'boolean') { next[category] = data.notificationPrefs[category]; touched = true; } } if (touched) user.notificationPrefs = next; } save(); return json(res, 200, { user: publicUser(user), notificationPrefs: notificationPrefs(user) }); }
+  /* Password change: proves the current password, stores only a new hash and
+     ends every other session, because a password change is what a person does
+     when they think someone else has their credentials. */
+  if (method === 'POST' && url.pathname === '/api/me/password') {
+    const user = auth(req);
+    if (!user.password) return json(res, 409, { error: 'This account has no password to change' });
+    if (!verifyHash(String(data.currentPassword || ''), user.password)) return json(res, 403, { error: 'Current password is incorrect' });
+    const next = String(data.newPassword || '');
+    if (next.length < 8) return json(res, 400, { error: 'New password must be at least 8 characters' });
+    if (next === String(data.currentPassword || '')) return json(res, 400, { error: 'New password must be different' });
+    user.password = hash(next);
+    const raw = token(req);
+    const before = db.sessions.length;
+    db.sessions = db.sessions.filter(s => s.userId !== user.id || s.token === raw);
+    db.auditLog.push({ id: id('audit'), actorId: user.id, action: 'PASSWORD_CHANGED', entityId: user.id, createdAt: now() });
+    save();
+    return json(res, 200, { ok: true, sessionsEnded: before - db.sessions.length });
+  }
+  /* Signed-in sessions for this account, without ever exposing a token. */
+  if (method === 'GET' && url.pathname === '/api/me/sessions') {
+    const user = auth(req);
+    const raw = token(req);
+    const sessions = db.sessions
+      .filter(s => s.userId === user.id)
+      .map(s => ({ createdAt: s.createdAt, expiresAt: s.expiresAt, current: s.token === raw, expired: new Date(s.expiresAt) <= new Date() }))
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    return json(res, 200, { sessions, count: sessions.filter(s => !s.expired).length });
+  }
+  if (method === 'POST' && url.pathname === '/api/me/sessions/revoke') {
+    const user = auth(req);
+    const raw = token(req);
+    const before = db.sessions.length;
+    db.sessions = db.sessions.filter(s => s.userId !== user.id || s.token === raw);
+    save();
+    return json(res, 200, { ok: true, sessionsEnded: before - db.sessions.length });
+  }
   if (method === 'GET' && url.pathname === '/api/public/stats') { const completed = db.bookings.filter(b => b.status === 'COMPLETED'); const rated = db.reviews.length ? Math.round((db.reviews.reduce((sum, r) => sum + r.rating, 0) / db.reviews.length) * 10) / 10 : null; /* The customer-visible fee model, so a booking quote always matches the amount the server will charge. */ const fees = { commissionBps: db.settings.commissionBps, feeType: db.settings.feeType, feeValue: db.settings.feeValue }; return json(res, 200, { stats: { services: db.services.filter(s => s.active).length, providers: db.users.filter(u => u.role === 'WORKER' && !u.disabled).length, verifiedProviders: db.users.filter(u => u.role === 'WORKER' && u.verified && !u.disabled).length, completedBookings: completed.length, reviews: db.reviews.length, averageRating: rated, fees } }); }
-  if (method === 'GET' && url.pathname === '/api/public/config') return json(res, 200, { config: { map: mapConfig() } });
+  if (method === 'GET' && url.pathname === '/api/public/config') return json(res, 200, { config: { map: mapConfig(), version: APP_VERSION, geocoding: { enabled: geocodeEnabled() } } });
+  /* Address search, proxied. `enabled: false` is a real answer the client
+     renders honestly, not an empty result set pretending nothing matched. */
+  if (method === 'GET' && url.pathname === '/api/geo/search') {
+    if (!geocodeEnabled()) return json(res, 501, { error: 'Address search is not configured', code: 'GEOCODE_DISABLED' });
+    const query = String(url.searchParams.get('q') || '').trim();
+    if (query.length < 3) return json(res, 400, { error: 'Type at least three characters' });
+    const payload = await geocodeRequest('/search', { q: query.slice(0, 160), format: 'jsonv2', addressdetails: '1', limit: String(GEOCODE_LIMIT) });
+    const results = (Array.isArray(payload) ? payload : []).map(geocodeResult).filter(Boolean).slice(0, GEOCODE_LIMIT);
+    return json(res, 200, { results });
+  }
+  if (method === 'GET' && url.pathname === '/api/geo/reverse') {
+    if (!geocodeEnabled()) return json(res, 501, { error: 'Address lookup is not configured', code: 'GEOCODE_DISABLED' });
+    const latitude = Number(url.searchParams.get('latitude'));
+    const longitude = Number(url.searchParams.get('longitude'));
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+      return json(res, 400, { error: 'Valid latitude and longitude are required' });
+    }
+    const payload = await geocodeRequest('/reverse', { lat: String(latitude), lon: String(longitude), format: 'jsonv2', addressdetails: '1' });
+    const result = payload && (payload.lat != null ? geocodeResult(payload) : null);
+    return json(res, 200, { result: result || null });
+  }
   if (method === 'GET' && url.pathname === '/api/events') { const user = auth(req); res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' }); res.write(`event: ready\ndata: ${JSON.stringify({ userId: user.id })}\n\n`); const client = { userId: user.id, write: (chunk) => res.write(chunk) }; sseClients.add(client); req.on('close', () => sseClients.delete(client)); return; }
   if (method === 'GET' && url.pathname === '/api/notifications') { const user = auth(req); return json(res, 200, { notifications: db.notifications.filter(n => n.userId === user.id).slice(-50).reverse() }); }
   if (method === 'PATCH' && parts[0] === 'api' && parts[1] === 'notifications' && parts[2]) { const user = auth(req); const notification = db.notifications.find(n => n.id === parts[2] && n.userId === user.id); if (!notification) return json(res, 404, { error: 'Notification not found' }); notification.read = true; save(); return json(res, 200, { notification }); }

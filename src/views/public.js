@@ -7,6 +7,7 @@ import { api, ApiError } from '../api.js';
 import { esc, icon, t, observeReveals, emptyState } from '../ui.js';
 import { getState, setState } from '../store.js';
 import { formatNumber } from '../i18n.js';
+import { homeFor } from '../shell.js';
 import { serviceName, serviceBlurb, serviceMedia } from '../ui.js';
 
 export function categoryCard(service, { compact = false } = {}) {
@@ -50,10 +51,10 @@ export async function landing() {
       <div class="welcome-hero__scrim" aria-hidden="true"></div>
       <div class="welcome-hero__body">
         <div class="welcome-hero__brand">
-          <span class="brand-mark">${icon('Map_Pin')}</span>
-          <span class="welcome-hero__name">${esc(t('brand.name'))}<small>${esc(t('landing.eyebrow'))}</small></span>
+          <img class="brand-logo" src="./assets/brand/${getLang() === 'en' ? 'logo-en' : 'logo-bn'}.svg" alt="${esc(t('brand.name'))}" height="44" />
         </div>
-        <h1 class="display">${esc(t('landing.headline'))}</h1>
+        <p class="welcome-hero__eyebrow">${esc(t('landing.eyebrow'))}</p>
+        <h1 class="display" data-fx="blur-text">${esc(t('landing.headline'))}</h1>
         <p>${esc(t('landing.sub'))}</p>
         <form class="hero-search" data-role="hero-search">
           <div class="searchbar">
@@ -63,7 +64,7 @@ export async function landing() {
           </div>
         </form>
         <div class="welcome-actions">
-          <button class="btn lg" data-action="open-register">${icon('Calendar_Add')}${esc(t('landing.ctaPrimary'))}</button>
+          <button class="btn lg" data-action="open-register" data-fx="shiny">${icon('Calendar_Add')}${esc(t('landing.ctaPrimary'))}</button>
           <button class="btn secondary lg" data-action="open-login">${icon('User_01')}${esc(t('nav.signin'))}</button>
           <button class="btn glass-dark lg" data-action="open-register" data-role="WORKER">${icon('Suitcase')}${esc(t('landing.ctaSecondary'))}</button>
         </div>
@@ -71,6 +72,7 @@ export async function landing() {
           ${[['Shield_Check', 'landing.trustVerified'], ['Tag', 'landing.trustClear'], ['Headphones', 'landing.trustSupport']].map(([ic, key]) => `
             <span class="pill glass-dark">${icon(ic)}<span>${esc(t(key))}</span></span>`).join('')}
         </div>
+        <p class="welcome-legal muted tiny">${esc(t('landing.legalLine'))} <a href="#/terms">${esc(t('legal.termsTitle'))}</a> · <a href="#/privacy">${esc(t('legal.privacyTitle'))}</a></p>
         ${stats ? statsRow(stats) : ''}
       </div>
     </section>
@@ -236,5 +238,17 @@ export async function publicSupport() {
 }
 
 export function notFoundPublic() {
-  return { body: `<div class="container" style="padding-top:60px">${emptyState({ art: 'assets/illustrations/empty-search.svg', title: t('error.notFound'), action: `<a class="btn" href="#/">${esc(t('nav.home'))}</a>` })}</div>`, chrome: 'public', active: '' };
+  const user = getState().user;
+  const home = user ? homeFor(user.role) : '#/';
+  const art = 'assets/illustrations/empty-search.svg';
+  return {
+    body: `<div class="container" style="padding-top:60px;max-width:560px;margin:0 auto;text-align:center">
+      <img src="./${attr(art)}" alt="" style="width:min(280px,70vw);height:auto;margin:0 auto 16px;display:block" loading="lazy" />
+      <h1 class="display" style="margin-bottom:8px">${esc(t('error.notFoundTitle'))}</h1>
+      <p class="muted" style="margin-bottom:20px">${esc(t('error.notFoundBody'))}</p>
+      <a class="btn lg" href="${home}">${icon('House_01')}${esc(t('error.backHome'))}</a>
+    </div>`,
+    chrome: user ? 'app' : 'public',
+    active: user ? (user.role === 'CUSTOMER' ? 'home' : user.role === 'WORKER' ? 'work' : 'admin') : ''
+  };
 }

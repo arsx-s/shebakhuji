@@ -6,7 +6,7 @@
   "description": "ShebaShathi — bilingual (Bangla/English) service marketplace for Bangladesh.",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check sw.js && node scripts/check-modules.js && node scripts/check-assets.js && node scripts/check-forms.js && node scripts/check-blocks.js && node scripts/check-vendor.js",
+    "check": "node --check server.js && node --check sw.js && node scripts/check-modules.js && node scripts/check-theme.js && node scripts/check-assets.js && node scripts/check-forms.js && node scripts/check-blocks.js && node scripts/check-vendor.js",
     "test": "node --test",
     "art": "node scripts/generate-art.js",
     "vendor:map": "node scripts/vendor-map.js",

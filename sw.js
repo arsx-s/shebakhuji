@@ -3,7 +3,7 @@
    never masked by a stale cache while still working offline; artwork is
    cache-first because it rarely changes and is the heaviest to refetch.
    Bump CACHE to invalidate. */
-const CACHE = 'shebashathi-shell-v5';
+const CACHE = 'shebashathi-shell-v6';
 const SHELL = [
   './',
   './index.html',
@@ -20,7 +20,19 @@ const SHELL = [
   './src/router.js',
   './src/ui.js',
   './src/i18n.js',
-  './src/shell.js'
+  './src/theme.js',
+  './src/fx.js',
+  './src/shell.js',
+  './src/map.js',
+  './src/views/auth.js',
+  './src/views/public.js',
+  './src/views/customer.js',
+  './src/views/booking.js',
+  './src/views/account.js',
+  './src/views/location.js',
+  './src/views/settings.js',
+  './src/views/provider.js',
+  './src/views/admin.js'
 ];
 
 /* Last-resort page when the app itself has never been cached. It is written by
@@ -30,9 +42,10 @@ const OFFLINE_HTML = `<!doctype html>
 <html lang="bn">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>সেবাসাথী — অফলাইন / ShebaShathi — offline</title>
-<style>body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#F6F5F2;color:#141B2E;font:16px/1.5 system-ui,"Noto Sans Bengali","Nirmala UI",sans-serif;padding:24px}
-.card{max-width:420px;text-align:center;background:#fff;border:1px solid #E2DFD8;border-radius:20px;padding:28px 22px;box-shadow:0 10px 30px rgba(20,27,46,.08)}
-h1{font-size:20px;margin:0 0 8px}p{margin:0 0 6px;color:#4B5563}a{display:inline-block;margin-top:16px;background:#A5542A;color:#fff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700}</style>
+<style>body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#F6F6F7;color:#121214;font:16px/1.5 system-ui,"Noto Sans Bengali","Nirmala UI",sans-serif;padding:24px}
+.card{max-width:420px;text-align:center;background:#FFFFFF;border:1px solid #E6E6EA;border-radius:20px;padding:28px 22px;box-shadow:0 10px 30px rgba(18,18,20,.08)}
+h1{font-size:20px;margin:0 0 8px}p{margin:0 0 6px;color:#62626B}a{display:inline-block;margin-top:16px;background:#111114;color:#FFFFFF;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700}
+@media (prefers-color-scheme: dark){body{background:#0B0B0D;color:#F4F4F6}.card{background:#141417;border-color:#2A2A30}p{color:#A9A9B2}a{background:#FFFFFF;color:#111114}}</style>
 </head>
 <body><div class="card">
 <h1>আপনি এখন অফলাইনে আছেন</h1>

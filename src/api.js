@@ -109,6 +109,11 @@ export const api = {
 
   me: () => get('/me'),
   updateMe: (body) => patch('/me', body),
+  changePassword: (currentPassword, newPassword) => post('/me/password', { currentPassword, newPassword }),
+  sessions: () => get('/me/sessions'),
+  revokeOtherSessions: () => post('/me/sessions/revoke', {}),
+  geoSearch: (q) => get(`/geo/search?q=${encodeURIComponent(q)}`),
+  geoReverse: (latitude, longitude) => get(`/geo/reverse?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`),
   login: (identifier, password) => post('/auth/login', { identifier, password }),
   register: (body) => post('/auth/register', body),
   logout: () => post('/auth/logout', {}),

@@ -26,7 +26,9 @@ export function icon(name, { label, className = 'ci' } = {}) {
 }
 
 /* ---------- avatar ------------------------------------------------------- */
-const AVATAR_PALETTE = ['#2E4A7D', '#7D4A2E', '#2E7D5B', '#6B2E7D', '#7D2E3C', '#2E6B7D'];
+/* Monochrome initial palette: fixed dark greys so the white initial keeps its
+   contrast in both themes, instead of six arbitrary brand colours. */
+const AVATAR_PALETTE = ['#26262B', '#33333A', '#3F3F47', '#4A4A54', '#2E2E34', '#55555E'];
 function initial(name) {
   const clean = String(name || '').trim();
   return clean ? clean[0].toUpperCase() : '?';
@@ -66,7 +68,7 @@ export function stars(rating, count) {
   if (rating == null) return `<span class="muted small">${esc(t('common.new'))}</span>`;
   const value = Math.round(Number(rating) * 10) / 10;
   const label = count != null ? `${value} (${count})` : String(value);
-  return `<span class="row" style="gap:4px;color:#B4761A"><span aria-hidden="true">★</span><b class="num">${esc(label)}</b></span>`;
+  return `<span class="row" style="gap:4px;color:var(--primary-ink)"><span aria-hidden="true">★</span><b class="num">${esc(label)}</b></span>`;
 }
 
 /* ---------- service media ------------------------------------------------ */
@@ -203,6 +205,12 @@ export function skeletonCards(count = 4, kind = 'service') {
   return Array.from({ length: count }, () => kind === 'service'
     ? `<div class="card pad-0"><div class="sk thumb"></div><div style="padding:16px"><div class="sk line w60"></div><div class="sk line w40"></div></div></div>`
     : `<div class="card"><div class="row"><div class="sk avatar"></div><div class="grow"><div class="sk line w60"></div><div class="sk line w80"></div></div></div></div>`).join('');
+}
+export function loader({ size = '', text = '', overlay = false } = {}) {
+  const cls = `loader${size ? ` ${size}` : ''}`;
+  const inner = `<div class="${cls}" role="status" aria-live="polite" aria-label="${esc(text || t('common.loading'))}"></div>${text ? `<span class="loader-label">${esc(text)}</span>` : ''}`;
+  if (overlay) return `<div class="loader-overlay">${inner}</div>`;
+  return `<div class="loader-wrap">${inner}</div>`;
 }
 export function emptyState({ art, title, body, action }) {
   return `<div class="empty">

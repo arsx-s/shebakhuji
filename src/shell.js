@@ -11,9 +11,8 @@ import { readPlace } from './map.js';
 export const NAV = {
   CUSTOMER: [
     { id: 'home', href: '#/home', icon: 'House_01', label: 'nav.home' },
-    { id: 'explore', href: '#/explore', icon: 'Search_Magnifying_Glass', label: 'nav.explore' },
+    { id: 'services', href: '#/services', icon: 'Search_Magnifying_Glass', label: 'nav.services' },
     { id: 'activity', href: '#/activity', icon: 'List_Checklist', label: 'nav.activity' },
-    { id: 'inbox', href: '#/inbox', icon: 'Chat_Conversation', label: 'nav.inbox' },
     { id: 'account', href: '#/account', icon: 'User_Circle', label: 'nav.account' }
   ],
   WORKER: [
@@ -44,10 +43,9 @@ const capitalised = (name) => {
 };
 
 export function brand({ href = '#/' } = {}) {
-  // No aria-label: the visible wordmark and tagline already name the link, and
-  // an aria-label that omitted them would disagree with the visible text.
+  const logo = getLang() === 'en' ? 'logo-en.svg' : 'logo-bn.svg';
   return `<a class="brand" href="${href}">
-    <span class="brand-mark">${icon('Map_Pin')}</span>
+    <img class="brand-logo-sm" src="./assets/brand/${logo}" alt="${esc(t('brand.name'))}" height="28" />
     <span>${esc(t('brand.name'))}<span class="brand-sub">${esc(t('brand.tagline'))}</span></span>
   </a>`;
 }
@@ -63,7 +61,7 @@ export function langButton({ variant = 'ghost' } = {}) {
 export function publicChrome({ body, active = '' } = {}) {
   const state = getState();
   const links = [
-    { href: '#/explore', label: 'nav.services', id: 'services' },
+    { href: '#/services', label: 'nav.services', id: 'services' },
     { href: '#/how-it-works', label: 'nav.how', id: 'how' },
     { href: '#/providers', label: 'nav.providers', id: 'providers' },
     { href: '#/support', label: 'nav.support', id: 'support' }
@@ -79,7 +77,7 @@ export function publicChrome({ body, active = '' } = {}) {
     <div class="container topbar-inner">
       ${brand()}
       <nav class="topnav" aria-label="Primary">
-        ${links.map((l) => `<a href="${l.href}"${active === l.id ? ' aria-current="page" style="color:var(--copper-ink);border-color:var(--copper)"' : ''}>${esc(t(l.label))}</a>`).join('')}
+        ${links.map((l) => `<a href="${l.href}"${active === l.id ? ' aria-current="page" style="color:var(--primary-ink);border-color:var(--primary)"' : ''}>${esc(t(l.label))}</a>`).join('')}
       </nav>
       <div class="top-actions">
         ${langButton()}
@@ -102,8 +100,8 @@ function publicFooter() {
         </div>
         <div>
           <h2>${esc(t('nav.services'))}</h2>
-          <a href="#/explore?category=Home%20Cleaning">${esc(t('nav.services'))}</a>
-          <a href="#/explore">${esc(t('landing.categoriesTitle'))}</a>
+          <a href="#/services?category=Home%20Cleaning">${esc(t('nav.services'))}</a>
+          <a href="#/services">${esc(t('landing.categoriesTitle'))}</a>
           <a href="#/book/Other%20Services">${esc(t('booking.title'))}</a>
         </div>
         <div>
@@ -115,6 +113,8 @@ function publicFooter() {
         <div>
           <h2>${esc(t('nav.support'))}</h2>
           <a href="#/support">${esc(t('support.title'))}</a>
+          <a href="#/terms">${esc(t('legal.termsTitle'))}</a>
+          <a href="#/privacy">${esc(t('legal.privacyTitle'))}</a>
           <a href="tel:+8809610000000">+880 9610 000 000</a>
           <a href="mailto:support@shebashathi.com.bd">support@shebashathi.com.bd</a>
         </div>
@@ -142,7 +142,7 @@ function appbar(state) {
       <a class="brand show-sm" href="${homeFor(user.role)}" style="font-size:17px">
         <span class="brand-mark" style="width:32px;height:32px">${icon('Map_Pin')}</span>
       </a>
-      <a class="loc grow" href="${user.role === 'CUSTOMER' ? '#/account/addresses' : '#/account'}" style="text-decoration:none">
+      <a class="loc grow" href="${user.role === 'CUSTOMER' ? '#/location' : '#/account'}" style="text-decoration:none">
         ${icon('Map_Pin')}
         <span class="grow">
           <small>${esc(t('home.locationTitle'))}</small>

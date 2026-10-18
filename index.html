@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>সেবাসাথী — বিশ্বস্ত সেবা, আপনার দরজায়</title>
   <meta name="description" content="সেবাসাথী — বাংলাদেশের বিশ্বস্ত সেবা মার্কেটপ্লেস। ঘরের কাজ, মেরামত, পরিষ্কার ও পেশাদার সেবা — যাচাই করা পেশাদারদের কাছ থেকে, সহজ কোটেশন ও নিরাপদ পেমেন্টসহ।" />
-  <meta name="theme-color" content="#141B2E" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#0B0F1A" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#F6F6F7" />
   <meta name="color-scheme" content="light dark" />
   <meta name="format-detection" content="telephone=no" />
   <link rel="manifest" href="./manifest.webmanifest" />
@@ -14,6 +13,28 @@
   <link rel="apple-touch-icon" href="./assets/brand/icon-192.png" />
   <link rel="apple-mobile-web-app-capable" content="yes" />
   <link rel="apple-mobile-web-app-title" content="সেবাসাথী" />
+  <script>
+    /* Runs before the stylesheet is applied, so a reload never flashes the
+       wrong appearance. Tiny on purpose: src/theme.js is the single source of
+       truth afterwards and reads and writes exactly the same two keys. */
+    (function () {
+      try {
+        var root = document.documentElement;
+        var theme = null;
+        var motion = null;
+        try { theme = localStorage.getItem('shebashathi.theme'); } catch (e) { theme = null; }
+        try { motion = localStorage.getItem('shebashathi.motion'); } catch (e) { motion = null; }
+        if (theme !== 'light' && theme !== 'dark' && theme !== 'system') theme = 'dark';
+        if (motion !== 'reduced' && motion !== 'full' && motion !== 'system') motion = 'system';
+        root.setAttribute('data-theme', theme);
+        var dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        root.style.colorScheme = dark ? 'dark' : 'light';
+        root.setAttribute('data-motion', motion === 'reduced' || (motion === 'system' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'reduced' : 'full');
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', dark ? '#0B0B0D' : '#F6F6F7');
+      } catch (e) { /* without storage the app simply renders in the default appearance */ }
+    })();
+  </script>
   <link rel="stylesheet" href="./assets/styles/app.css" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="সেবাসাথী — বিশ্বস্ত সেবা, আপনার দরজায়" />
@@ -46,6 +67,6 @@
     </div>
   </noscript>
 
-  <script type="module" src="./src/app.js?v=20261018"></script>
+  <script type="module" src="./src/app.js?v=20261018b"></script>
 </body>
 </html>
