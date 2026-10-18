@@ -67,11 +67,26 @@ function mapConfig() {
 const GEOCODE_URL = String(process.env.MAP_GEOCODE_URL || '').trim().replace(/\/+$/, '');
 const GEOCODE_LIMIT = 8;
 const GEOCODE_TIMEOUT = 6000;
+const GEOCODE_CACHE_TTL = 5 * 60 * 1000;
+const GEOCODE_MIN_INTERVAL = 1100;
+const geocodeCache = new Map();
+let geocodeLastCall = 0;
+function geocodeCacheKey(pathname, params) { return pathname + '?' + new URLSearchParams(params).toString(); }
+async function geocodeThrottle() {
+  const now = Date.now();
+  const wait = GEOCODE_MIN_INTERVAL - (now - geocodeLastCall);
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  geocodeLastCall = Date.now();
+}
 function geocodeEnabled() {
   if (!GEOCODE_URL) return false;
   try { const parsed = new URL(GEOCODE_URL); return parsed.protocol === 'https:' || parsed.protocol === 'http:'; } catch { return false; }
 }
 async function geocodeRequest(pathname, params) {
+  const key = geocodeCacheKey(pathname, params);
+  const cached = geocodeCache.get(key);
+  if (cached && Date.now() - cached.at < GEOCODE_CACHE_TTL) return cached.data;
+  await geocodeThrottle();
   const query = new URLSearchParams(params);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GEOCODE_TIMEOUT);
@@ -80,12 +95,18 @@ async function geocodeRequest(pathname, params) {
       signal: controller.signal,
       headers: {
         accept: 'application/json',
-        /* Nominatim requires an identifying agent; the operator can override it. */
         'user-agent': process.env.MAP_GEOCODE_AGENT || 'ShebaShathi/1.0 (+https://github.com/arsx-s/shebakhuji)'
       }
     });
     if (!response.ok) throw Object.assign(new Error('Geocoding provider error'), { status: 502 });
-    return await response.json();
+    const data = await response.json();
+    geocodeCache.set(key, { at: Date.now(), data });
+    // Keep the cache small.
+    if (geocodeCache.size > 200) {
+      const oldest = geocodeCache.keys().next().value;
+      geocodeCache.delete(oldest);
+    }
+    return data;
   } catch (error) {
     if (error.name === 'AbortError') throw Object.assign(new Error('Geocoding provider timed out'), { status: 504 });
     throw Object.assign(new Error('Geocoding provider unreachable'), { status: 502 });
@@ -256,7 +277,31 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true, sessionsEnded: before - db.sessions.length });
   }
   if (method === 'GET' && url.pathname === '/api/public/stats') { const completed = db.bookings.filter(b => b.status === 'COMPLETED'); const rated = db.reviews.length ? Math.round((db.reviews.reduce((sum, r) => sum + r.rating, 0) / db.reviews.length) * 10) / 10 : null; /* The customer-visible fee model, so a booking quote always matches the amount the server will charge. */ const fees = { commissionBps: db.settings.commissionBps, feeType: db.settings.feeType, feeValue: db.settings.feeValue }; return json(res, 200, { stats: { services: db.services.filter(s => s.active).length, providers: db.users.filter(u => u.role === 'WORKER' && !u.disabled).length, verifiedProviders: db.users.filter(u => u.role === 'WORKER' && u.verified && !u.disabled).length, completedBookings: completed.length, reviews: db.reviews.length, averageRating: rated, fees } }); }
+  /* Account deletion: proves the password, removes personal data, revokes every
+     session. Financial/booking records are retained but anonymised so the
+     platform keeps its accounting and dispute history without keeping PII. */
   if (method === 'GET' && url.pathname === '/api/public/config') return json(res, 200, { config: { map: mapConfig(), version: APP_VERSION, geocoding: { enabled: geocodeEnabled() } } });
+  if (method === 'POST' && url.pathname === '/api/me/delete') {
+    const user = auth(req);
+    if (!user.password) return json(res, 409, { error: 'This account has no password to verify' });
+    if (!verifyHash(String(data.password || ''), user.password)) return json(res, 403, { error: 'Current password is incorrect' });
+    const raw = token(req);
+    // Revoke all sessions for this account.
+    db.sessions = db.sessions.filter((s) => s.userId !== user.id);
+    // Anonymise personal fields; keep the row (and booking history) for accounting.
+    user.name = 'Deleted user';
+    user.email = null;
+    user.phone = null;
+    user.area = '';
+    user.district = '';
+    user.bio = '';
+    user.avatarDataUrl = null;
+    user.disabled = true;
+    user.deletedAt = now();
+    db.auditLog.push({ id: id('audit'), actorId: user.id, action: 'ACCOUNT_DELETED', entityId: user.id, createdAt: now() });
+    save();
+    return json(res, 200, { ok: true });
+  }
   /* Address search, proxied. `enabled: false` is a real answer the client
      renders honestly, not an empty result set pretending nothing matched. */
   if (method === 'GET' && url.pathname === '/api/geo/search') {

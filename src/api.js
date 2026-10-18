@@ -112,6 +112,7 @@ export const api = {
   changePassword: (currentPassword, newPassword) => post('/me/password', { currentPassword, newPassword }),
   sessions: () => get('/me/sessions'),
   revokeOtherSessions: () => post('/me/sessions/revoke', {}),
+  deleteAccount: (password) => post('/me/delete', { password }),
   geoSearch: (q) => get(`/geo/search?q=${encodeURIComponent(q)}`),
   geoReverse: (latitude, longitude) => get(`/geo/reverse?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`),
   login: (identifier, password) => post('/auth/login', { identifier, password }),

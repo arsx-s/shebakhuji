@@ -12,7 +12,7 @@
  * capability does not exist (self-service account deletion, SMS/push
  * notifications) the screen says so instead of shipping a fake control.
  */
-import { api, ApiError } from '../api.js';
+import { api, ApiError, clearToken } from '../api.js';
 import {
   esc, icon, t, toast, confirm, setBusy, observeReveals, register
 } from '../ui.js';
@@ -304,7 +304,7 @@ export async function privacyView() {
           <b>${esc(t('settings.deleteAccount'))}</b>
           <p class="muted small" style="margin:4px 0 0">${esc(t('settings.deleteAccountBody'))}</p>
         </div>
-        <span class="tag draft">${esc(t('settings.rowLocked'))}</span>
+        <button class="btn danger sm" data-action="delete-account">${esc(t('settings.deleteAccount'))}</button>
       </div>
     </section>
 
@@ -457,6 +457,27 @@ export async function privacyPolicyView() {
   } finally { el.disabled = false; }
 });
 
+register('delete-account', async () => {
+  const ok = await confirm({
+    title: t('settings.deleteAccount'),
+    body: t('settings.deleteAccountBody'),
+    confirmLabel: t('settings.deleteAccount'),
+    danger: true
+  });
+  if (!ok) return;
+  const password = window.prompt(t('settings.currentPassword'));
+  if (!password) return;
+  try {
+    await api.deleteAccount(password);
+    toast(t('settings.accountDeleted'), 'success');
+    // Clear session and return to auth screen
+    clearToken();
+    setState({ user: null, notifications: [] });
+    navigate('#/');
+  } catch (error) {
+    toast(error instanceof ApiError ? error.message : t('auth.errGeneric'), 'error');
+  }
+});
 register('revoke-sessions', async () => {
   const ok = await confirm({ title: t('settings.signOutAll'), body: t('settings.signOutAllBody'), confirmLabel: t('settings.signOutAll') });
   if (!ok) return;
