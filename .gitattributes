@@ -1,0 +1,20 @@
+# The vendored map build is third-party output. Git must never rewrite its line
+# endings: a converted CRLF can land inside an embedded CSS or shader string and
+# silently change what the bundle ships.
+assets/vendor/** -text
+
+# Binary art and documents.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.woff2 binary
+
+# Source and docs are text, with the line endings the platform uses.
+*.js text
+*.mjs text
+*.css text
+*.html text
+*.json text
+*.md text
+*.svg text
