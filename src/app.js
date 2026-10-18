@@ -272,16 +272,13 @@ async function boot() {
   window.addEventListener('online', offlineBanner);
   window.addEventListener('offline', offlineBanner);
 
-  await loadServices();
-  await restoreSession();
+  await Promise.allSettled([loadServices(), restoreSession()]);
   setState({ ready: true });
-  // startRouter resolves the current hash and notifies listeners, which paints.
-  await startRouter();
-
-  await refreshNotifications();
-  startNotificationPolling();
-  registerServiceWorker();
-  installClickSpark();
+  try { await startRouter(); } catch (e) { console.error('[boot] router failed', e); }
+  try { await refreshNotifications(); } catch (e) { /* ignore */ }
+  try { startNotificationPolling(); } catch (e) { /* ignore */ }
+  try { registerServiceWorker(); } catch (e) { /* ignore */ }
+  try { installClickSpark(); } catch (e) { /* ignore */ }
 }
 
 /* Offline shell. Skipped on file:// (Capacitor bundles the app locally) and

@@ -48,22 +48,26 @@ export function errorKey(error) {
 }
 
 /* ---------- core request -------------------------------------------------- */
-export async function request(path, { method = 'GET', body, signal, headers } = {}) {
-  const init = { method, credentials: 'include', headers: { accept: 'application/json', ...(headers || {}) } };
+export async function request(path, { method = 'GET', body, signal, headers, timeout = 8000 } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  const init = { method, credentials: 'include', headers: { accept: 'application/json', ...(headers || {}) }, signal: signal || controller.signal };
   if (body !== undefined) {
     init.headers['content-type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
   if (IS_NATIVE) init.headers['x-client-platform'] = 'android';
   if (token) init.headers.authorization = `Bearer ${token}`;
-  if (signal) init.signal = signal;
 
   let response;
   try {
     response = await fetch(`${API_BASE}${path}`, init);
   } catch (error) {
+    clearTimeout(timer);
+    if (error.name === 'AbortError') throw new ApiError('Request timed out', { status: 0, code: 'timeout' });
     throw new ApiError(error.message || 'Network error', { status: 0, code: 'network' });
   }
+  clearTimeout(timer);
 
   let payload = null;
   const text = await response.text();
