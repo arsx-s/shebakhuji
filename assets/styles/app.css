@@ -353,6 +353,7 @@ h3, .h3 { font-size: 18px; line-height: 1.3; font-weight: 700; letter-spacing: -
 /* ---- 5. Public top bar -------------------------------------------------- */
 .topbar {
   position: sticky; top: 0; z-index: 40;
+  padding-top: env(safe-area-inset-top, 0px);
   background: color-mix(in oklab, var(--canvas) 86%, transparent);
   backdrop-filter: saturate(1.4) blur(14px);
   border-bottom: 1px solid var(--line);
@@ -531,7 +532,7 @@ h3, .h3 { font-size: 18px; line-height: 1.3; font-weight: 700; letter-spacing: -
 @media (min-width: 800px) { .steps.three { grid-template-columns: repeat(3, 1fr); } }
 
 /* ---- 12. App shell (authenticated) ------------------------------------- */
-.appbar { position: sticky; top: 0; z-index: 40; background: var(--glass-2); backdrop-filter: blur(var(--blur-2)) saturate(1.5); -webkit-backdrop-filter: blur(var(--blur-2)) saturate(1.5); border-bottom: 1px solid var(--line); box-shadow: var(--glass-highlight); }
+.appbar { position: sticky; top: 0; z-index: 40; background: var(--glass-2); backdrop-filter: blur(var(--blur-2)) saturate(1.5); -webkit-backdrop-filter: blur(var(--blur-2)) saturate(1.5); border-bottom: 1px solid var(--line); box-shadow: var(--glass-highlight); padding-top: env(safe-area-inset-top, 0px); }
 .appbar-inner { min-height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); }
 .appbar .loc { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 4px 0; }
 .appbar .loc .ci { width: 18px; height: 18px; color: var(--text); flex: none; }
@@ -1093,7 +1094,7 @@ html[data-motion="reduced"] .loader, html[data-motion="reduced"] .shebashathi-lo
 /* ==========================================================================
    32. Authentication screen (Uber-style mobile auth)
    ========================================================================== */
-.auth-screen { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px calc(24px + env(safe-area-inset-bottom,0px)); background: var(--canvas); }
+.auth-screen { min-height: 100dvh; display: grid; place-items: center; padding: calc(24px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px)); background: var(--canvas); }
 .auth-card { width: 100%; max-width: 420px; background: var(--surface); border-radius: var(--r-xl); box-shadow: var(--sh-3); padding: 28px 22px; display: flex; flex-direction: column; gap: 18px; }
 .auth-illustration { position: relative; width: 256px; height: 256px; margin: 0 auto 8px; }
 @media (min-width: 400px) { .auth-illustration { width: 288px; height: 288px; } }
