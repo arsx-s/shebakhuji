@@ -67,6 +67,25 @@
   --bar-h: 64px;
   --nav-h: 68px;
   --maxw: 1180px;
+
+  /* Glass surface hierarchy — four deliberate levels, not one universal blur.
+     1: floating controls on the map (chips, buttons)
+     2: navigation surfaces that content scrolls under (bars, toolbars)
+     3: elevated panels that carry text and actions (sheets, popovers)
+     4: dark glass for badges that sit on imagery */
+  --glass-1: rgba(255, 255, 255, .72);
+  --glass-2: rgba(255, 255, 255, .84);
+  --glass-3: rgba(255, 255, 255, .94);
+  --glass-4: rgba(17, 23, 40, .62);
+  --glass-line: rgba(255, 255, 255, .62);
+  --glass-line-strong: rgba(20, 27, 46, .10);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, .75);
+  --blur-1: 12px; --blur-2: 20px; --blur-3: 30px;
+  --sh-float: 0 10px 30px rgba(20, 27, 46, .16), 0 2px 6px rgba(20, 27, 46, .08);
+  --sh-float-lg: 0 22px 48px rgba(20, 27, 46, .24), 0 4px 12px rgba(20, 27, 46, .12);
+
+  /* Layering */
+  --z-map: 1; --z-map-overlay: 3; --z-sheet: 4; --z-nav: 45; --z-toast: 90; --z-modal: 100;
 }
 
 /* ---- 2. Reset ----------------------------------------------------------- */
@@ -179,8 +198,7 @@ h3, .h3 { font-size: 18px; line-height: 1.3; font-weight: 700; letter-spacing: -
   background: color-mix(in oklab, var(--canvas) 86%, transparent);
   backdrop-filter: saturate(1.4) blur(14px);
   border-bottom: 1px solid var(--line);
-}
-.topbar-inner { height: var(--bar-h); display: flex; align-items: center; gap: var(--s-4); }
+}.topbar-inner { height: var(--bar-h); display: flex; align-items: center; gap: var(--s-4); }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; font-size: 20px; }
 .brand-mark {
   width: 36px; height: 36px; border-radius: 11px; background: var(--ink);
@@ -352,9 +370,9 @@ h3, .h3 { font-size: 18px; line-height: 1.3; font-weight: 700; letter-spacing: -
 @media (min-width: 800px) { .steps.three { grid-template-columns: repeat(3, 1fr); } }
 
 /* ---- 12. App shell (authenticated) ------------------------------------- */
-.appbar { position: sticky; top: 0; z-index: 40; background: color-mix(in oklab, var(--canvas) 88%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
+.appbar { position: sticky; top: 0; z-index: 40; background: var(--glass-2); backdrop-filter: blur(var(--blur-2)) saturate(1.5); -webkit-backdrop-filter: blur(var(--blur-2)) saturate(1.5); border-bottom: 1px solid var(--line); box-shadow: var(--glass-highlight); }
 .appbar-inner { min-height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); }
-.appbar .loc { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.appbar .loc { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 4px 0; }
 .appbar .loc .ci { width: 18px; height: 18px; color: var(--copper); flex: none; }
 .appbar .loc b { font-weight: 700; font-size: 14px; }
 .appbar .loc small { display: block; color: var(--muted); font-size: 12px; }
@@ -366,10 +384,11 @@ h3, .h3 { font-size: 18px; line-height: 1.3; font-weight: 700; letter-spacing: -
 .avatar.sm { width: 32px; height: 32px; font-size: 12.5px; }
 
 .bottom-nav {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-nav);
   display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
-  background: rgba(255,255,255,.96); backdrop-filter: blur(16px);
-  border-top: 1px solid var(--line);
+  background: var(--glass-3); backdrop-filter: blur(var(--blur-2)) saturate(1.6); -webkit-backdrop-filter: blur(var(--blur-2)) saturate(1.6);
+  border-top: 1px solid var(--glass-line-strong);
+  box-shadow: 0 -8px 24px rgba(20, 27, 46, .08);
   padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
 }
 .bottom-nav button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 2px; color: var(--muted); font-size: 11px; font-weight: 650; border-radius: var(--r-sm); }
@@ -466,13 +485,10 @@ h3, .h3 { font-size: 18px; line-height: 1.3; font-weight: 700; letter-spacing: -
 .tl-body b { font-size: 14.5px; }
 .tl-body small { display: block; color: var(--muted); font-size: 12.5px; }
 
-/* ---- 19. Map boundary ------------------------------------------------- */
-.map-frame { position: relative; border-radius: var(--r-lg); overflow: hidden; border: 1px solid var(--line); background: #E9E7E1; }
-.map-frame img, .map-frame .map-canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
-.map-grid { min-height: 240px; background-image: linear-gradient(rgba(20,27,46,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(20,27,46,.07) 1px, transparent 1px); background-size: 34px 34px; background-color: #EDEBE5; position: relative; }
-.map-pin { position: absolute; width: 34px; height: 34px; border-radius: 50% 50% 50% 0; background: var(--copper); color: #fff; display: grid; place-items: center; transform: rotate(-45deg); box-shadow: var(--sh-3); }
-.map-pin .ci { transform: rotate(45deg); width: 17px; height: 17px; }
-.map-note { position: absolute; left: 12px; right: 12px; bottom: 12px; background: rgba(255,255,255,.95); border: 1px solid var(--line); padding: 10px 12px; border-radius: var(--r-sm); font-size: 12.5px; color: var(--muted); }
+/* ---- 19. Map boundaries ------------------------------------------------
+   Real maps only: the MapLibre canvas is the single surface (`.map-slot`), and
+   when a style is not configured the honest `.map-unavailable` card is shown
+   instead. There is no placeholder art pretending to be a map. */
 
 /* ---- 20. Tables (admin) ------------------------------------------------ */
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
@@ -492,9 +508,13 @@ table.data tr:last-child td { border-bottom: 0; }
 @keyframes toastOut { to { transform: translateY(-10px) scale(.97); } }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(200,112,63,.5); } 50% { box-shadow: 0 0 0 7px rgba(200,112,63,0); } }
 @keyframes floatIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes riseIn { from { transform: translateY(16px); } to { transform: none; } }
 
-.reveal { opacity: 0; transform: translateY(16px); }
-.reveal.in { animation: floatIn var(--dur-4) var(--ease-out) both; }
+/* The scroll-triggered reveal moves, but never changes opacity: text that is
+   fading in is text with a temporarily lower contrast ratio, which is a real
+   (if brief) failure and an audit failure too. Cards rise into place instead. */
+.reveal { transform: translateY(16px); }
+.reveal.in { animation: riseIn var(--dur-4) var(--ease-out) both; }
 .stagger > * { animation: floatIn var(--dur-4) var(--ease-out) both; }
 .stagger > *:nth-child(1) { animation-delay: 40ms; }
 .stagger > *:nth-child(2) { animation-delay: 90ms; }
@@ -505,7 +525,7 @@ table.data tr:last-child td { border-bottom: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
-  .reveal { opacity: 1; transform: none; }
+  .reveal { transform: none; }
 }
 
 /* ---- 22. Icons --------------------------------------------------------- */
@@ -567,3 +587,215 @@ table.data tr:last-child td { border-bottom: 0; }
 @media (max-width: 379px) {
   .top-actions .hide-xs { display: none; }
 }
+
+/* ==========================================================================
+   25. Glass surface system
+   Four deliberate levels (see the tokens) instead of one blur everywhere.
+   Every glass surface keeps an opaque-enough background that its text still
+   passes contrast against whatever scrolls underneath it.
+   ========================================================================== */
+.glass {
+  background: var(--glass-2);
+  backdrop-filter: blur(var(--blur-2)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--blur-2)) saturate(1.5);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--sh-float), var(--glass-highlight);
+}
+.glass-soft { background: var(--glass-1); backdrop-filter: blur(var(--blur-1)) saturate(1.4); -webkit-backdrop-filter: blur(var(--blur-1)) saturate(1.4); box-shadow: var(--sh-1); }
+.glass-solid { background: var(--glass-3); backdrop-filter: blur(var(--blur-3)) saturate(1.6); -webkit-backdrop-filter: blur(var(--blur-3)) saturate(1.6); box-shadow: var(--sh-float-lg), var(--glass-highlight); }
+.glass-dark { background: var(--glass-4); backdrop-filter: blur(var(--blur-1)) saturate(1.3); -webkit-backdrop-filter: blur(var(--blur-1)) saturate(1.3); border: 1px solid rgba(255, 255, 255, .22); color: #fff; }
+.glass-dark .muted, .glass-dark small { color: rgba(255, 255, 255, .78); }
+.glass-row { display: flex; align-items: center; gap: var(--s-2); padding: 6px; border-radius: var(--r-pill); }
+
+@supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
+  /* No blur support: fall back to near-opaque surfaces so nothing becomes
+     illegible. The layout is identical, only the translucency is lost. */
+  .glass { background: #FCFBF9; }
+  .glass-soft { background: #FDFCFA; }
+  .glass-solid { background: #FFFFFF; }
+  .glass-dark { background: rgba(17, 23, 40, .92); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass, .glass-soft, .glass-solid, .appbar, .topbar, .bottom-nav, .sheet { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  .glass, .glass-soft, .glass-solid { background: var(--surface); border-color: var(--line-strong); }
+}
+
+.sheet { background: var(--glass-3); backdrop-filter: blur(var(--blur-3)) saturate(1.5); -webkit-backdrop-filter: blur(var(--blur-3)) saturate(1.5); }
+.scrim { background: rgba(17, 22, 38, .44); }
+.sheet-footer { margin-top: var(--s-5); padding-top: var(--s-4); border-top: 1px solid var(--line); }
+
+/* ---- 25b. Buttons: the remaining variants of the family ----------------- */
+.btn.tertiary {
+  --bg: transparent; --fg: var(--copper-ink); --bd: transparent;
+  box-shadow: none; padding-inline: 12px; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px;
+}
+.btn.tertiary:hover { background: var(--copper-soft); }
+.btn.destructive { --bg: var(--danger); --fg: #fff; }
+.btn.destructive:hover { background: #8F2C22; }
+.btn.on-glass { --bg: rgba(255, 255, 255, .86); --fg: var(--ink); --bd: rgba(255, 255, 255, .7); }
+.btn.on-glass:hover { background: #fff; }
+.btn:focus-visible { outline: 3px solid var(--copper-dark); outline-offset: 2px; }
+.btn .ci { flex: none; }
+.btn.icon.pill { border-radius: var(--r-pill); }
+
+/* ---- 25c. Inputs on glass / large-touch -------------------------------- */
+.input.glass, .field input.glass { background: var(--glass-1); backdrop-filter: blur(var(--blur-1)); -webkit-backdrop-filter: blur(var(--blur-1)); }
+.input:disabled, .field input:disabled, .field select:disabled, .field textarea:disabled { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
+.field .err { margin-top: 2px; }
+
+/* ==========================================================================
+   26. Welcome / first-run experience
+   ========================================================================== */
+.welcome { position: relative; padding: clamp(18px, 4vw, 40px) 0 var(--s-10); }
+.welcome-hero {
+  position: relative; overflow: hidden; border-radius: var(--r-xl);
+  background: linear-gradient(160deg, #141B2E 0%, #232D49 58%, #33405f 100%);
+  color: #fff; box-shadow: var(--sh-3); min-height: min(78vh, 620px);
+  display: flex; align-items: flex-end;
+}
+.welcome-hero__media { position: absolute; inset: 0; }
+.welcome-hero__media img { width: 100%; height: 100%; object-fit: cover; opacity: .42; }
+.welcome-hero__scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(12, 17, 32, .55) 0%, rgba(12, 17, 32, .35) 42%, rgba(12, 17, 32, .88) 100%); }
+.welcome-hero__body { position: relative; width: 100%; padding: clamp(20px, 4vw, 44px); display: flex; flex-direction: column; gap: var(--s-4); }
+.welcome-hero__brand { display: flex; align-items: center; gap: 12px; }
+.welcome-hero__brand .brand-mark { background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .26); }
+.welcome-hero__name { font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+.welcome-hero__name small { display: block; font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: rgba(255, 255, 255, .7); }
+.welcome-hero h1 { color: #fff; max-width: 22ch; }
+.welcome-hero p { color: rgba(255, 255, 255, .84); max-width: 48ch; }
+.welcome-actions { display: flex; flex-wrap: wrap; gap: var(--s-3); }
+.welcome-actions .btn { flex: 1 1 190px; }
+.welcome-trust { display: flex; flex-wrap: wrap; gap: 8px; }
+.welcome-trust .pill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: var(--r-pill); font-size: 13px; font-weight: 650; }
+.welcome-trust .pill .ci { width: 16px; height: 16px; }
+@media (min-width: 900px) {
+  .welcome-hero { align-items: center; }
+  .welcome-hero__body { max-width: 640px; }
+}
+
+/* ==========================================================================
+   27. Map-first customer home
+   Mobile: the map is the page, the sheet is the content. Desktop: map and
+   panel sit side by side instead of a stretched phone layout.
+   ========================================================================== */
+.app-main--full { padding: 0 !important; }
+.app-main--full > .home-map { border-radius: 0; }
+
+.home-map {
+  position: relative;
+  height: calc(100dvh - var(--bar-h) - var(--nav-h) - env(safe-area-inset-bottom, 0px));
+  min-height: 380px;
+  background: #E7E5DF;
+  overflow: hidden;
+}
+.map-pane { position: absolute; inset: 0; }
+.map-host { position: absolute; inset: 0; }
+/* MapLibre adds `.maplibregl-map { position: relative }` to its container, so
+   this rule is written to win on specificity and keep the canvas filling the
+   host instead of collapsing to the height of its absolutely positioned
+   children. */
+div.map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map-host[data-state="unavailable"] { background: linear-gradient(180deg, #EFEDE7 0%, #E4E1DA 100%); }
+
+.map-overlay { position: absolute; z-index: var(--z-map-overlay); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.map-overlay > * { pointer-events: auto; }
+.map-overlay--top { top: calc(10px + env(safe-area-inset-top, 0px)); left: 10px; right: 10px; }
+.map-overlay--bottom { bottom: 12px; left: 10px; right: 10px; }
+.map-search { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-radius: var(--r-pill); }
+.map-search .ci { color: var(--muted); width: 19px; height: 19px; flex: none; }
+.map-search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; min-height: 38px; font-size: 15px; }
+.map-chips { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.map-chip {
+  display: inline-flex; align-items: center; gap: 7px; min-width: 0;
+  padding: 8px 14px; border-radius: var(--r-pill); font-size: 13.5px; font-weight: 650; color: var(--ink);
+}
+.map-chip .ci { width: 17px; height: 17px; color: var(--copper-ink); flex: none; }
+.map-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-chip[aria-pressed="true"] { border-color: var(--copper); color: var(--copper-ink); }
+
+.map-controls { position: absolute; z-index: var(--z-map-overlay); right: 10px; top: calc(112px + env(safe-area-inset-top, 0px)); display: flex; flex-direction: column; gap: 2px; border-radius: var(--r-md); overflow: hidden; }
+.map-controls button { width: 46px; height: 46px; display: grid; place-items: center; color: var(--ink); background: transparent; border-radius: 0; }
+.map-controls button + button { border-top: 1px solid var(--glass-line-strong); }
+.map-controls button:hover { background: rgba(255, 255, 255, .55); }
+.map-controls .ci { width: 21px; height: 21px; }
+
+.map-marker { width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--copper-dark); border: 2px solid #fff; box-shadow: var(--sh-2); }
+.map-marker--worker { width: 20px; height: 20px; border-radius: 50%; transform: none; background: var(--teal); border: 2px solid #fff; box-shadow: var(--sh-1); }
+
+.map-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: var(--z-sheet);
+  display: flex; flex-direction: column;
+  max-height: 54%;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  border-bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  transition: max-height var(--dur-3) var(--ease-out);
+}
+.map-sheet.open { max-height: min(88dvh, 760px); }
+.map-sheet__grip { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 0 12px; }
+.map-sheet__grip button { width: 64px; height: 32px; display: grid; place-items: center; }
+.map-sheet__grip button::before { content: ""; width: 42px; height: 5px; border-radius: 99px; background: var(--line-strong); }
+.map-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 0 var(--s-4) 6px; }
+.map-sheet__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px var(--s-4) var(--s-6); -webkit-overflow-scrolling: touch; }
+.map-sheet__body > :first-child { margin-top: 0; }
+.map-sheet .segmented { width: 100%; }
+.map-sheet .segmented button { flex: 1; }
+
+.map-status { display: flex; align-items: flex-start; gap: 8px; margin: 0 var(--s-4) 8px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--warn); font-size: 13px; font-weight: 600; }
+.map-status .ci { width: 17px; height: 17px; flex: none; margin-top: 1px; }
+.map-status.err { background: var(--danger-soft); color: var(--danger); }
+.map-unavailable { position: absolute; inset: 0; display: grid; place-items: center; padding: var(--s-6); text-align: center; }
+.map-unavailable .card { max-width: 440px; }
+.map-credit { font-size: 11.5px; color: var(--muted); }
+
+.map-list-item { display: flex; gap: 12px; align-items: flex-start; width: 100%; text-align: left; padding: 12px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--sh-1); }
+
+/* Map embedded in a form (the booking address step): a fixed-height slot with
+   the same single map instance re-parented into it, and one glass action. */
+.map-slot { position: relative; height: 190px; border-radius: var(--r-lg); overflow: hidden; border: 1px solid var(--line-strong); background: #E9E7E1; box-shadow: var(--sh-1); }
+.map-slot--sheet { height: min(56vh, 420px); }
+.map-slot__host { position: absolute; inset: 0; }
+.map-slot__host[data-state="unavailable"] { background: linear-gradient(180deg, #EFEDE7 0%, #E4E1DA 100%); }
+.map-slot__action { position: absolute; left: 8px; bottom: 8px; z-index: 3; }
+/* With no map to control, the zoom buttons would be dead — so they are not
+   shown at all. The location chip stays: it still opens the address sheet. */
+.map-host[data-state="unavailable"] ~ .map-controls { display: none; }
+.map-list-item + .map-list-item { margin-top: 10px; }
+.map-list-item:hover { border-color: var(--line-strong); box-shadow: var(--sh-2); }
+.map-privacy { display: flex; gap: 6px; align-items: flex-start; margin-top: var(--s-5); font-size: 12.5px; color: var(--muted); }
+.map-privacy .ci { width: 15px; height: 15px; flex: none; margin-top: 2px; color: var(--teal); }
+
+@media (max-width: 420px) {
+  .map-sheet { max-height: 58%; }
+  .map-controls { top: calc(104px + env(safe-area-inset-top, 0px)); }
+}
+@media (min-width: 900px) {
+  .home-map {
+    height: calc(100dvh - var(--bar-h));
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
+    grid-template-rows: 100%;
+    gap: 0;
+  }
+  .map-pane { position: relative; inset: auto; min-height: 0; height: 100%; }
+  .map-sheet {
+    position: relative; inset: auto; max-height: none; height: 100%; min-height: 0; overflow: hidden;
+    border-radius: 0; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    padding-bottom: 0;
+  }
+  .map-sheet.open { max-height: none; }
+  .map-sheet__grip { display: none; }
+  .map-sheet__body { padding-bottom: var(--s-8); }
+  .map-overlay--top { left: 16px; right: 16px; }
+  .map-controls { right: 16px; }
+}
+
+/* ==========================================================================
+   28. Safe areas & shell helpers
+   ========================================================================== */
+.app-main { padding-bottom: var(--s-6); }
+.app-main--full { padding-bottom: 0; }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+

@@ -84,6 +84,19 @@ export const del = (path, options) => request(path, { ...options, method: 'DELET
 export const api = {
   health: () => get('/health'),
   publicStats: () => get('/public/stats'),
+  publicConfig: () => get('/public/config'),
+  /* Real worker positions, only for customers, only when the worker is
+     available and has shared a location in the last 30 minutes. */
+  discoveryWorkers: ({ service, latitude, longitude } = {}) => {
+    const params = new URLSearchParams();
+    if (service) params.set('service', service);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      params.set('latitude', String(latitude));
+      params.set('longitude', String(longitude));
+    }
+    const qs = params.toString();
+    return get(`/discovery/workers${qs ? `?${qs}` : ''}`);
+  },
 
   services: () => get('/services'),
   providers: (query = {}) => {

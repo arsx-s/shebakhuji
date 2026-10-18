@@ -103,13 +103,34 @@ export function toast(message, type = 'info', { duration = 3600 } = {}) {
 let activeOverlay = null;
 export function closeSheet() {
   if (!activeOverlay) return;
-  const { scrim, onClose } = activeOverlay;
+  const { scrim, onClose, returnFocus } = activeOverlay;
   activeOverlay = null;
   scrim.remove();
   document.removeEventListener('keydown', onKeydown);
+  // Focus goes back to whatever opened the dialog, so keyboard users are not
+  // dropped at the top of the page (WCAG 2.4.3).
+  if (returnFocus && document.contains(returnFocus) && typeof returnFocus.focus === 'function') {
+    try { returnFocus.focus(); } catch { /* the trigger was re-rendered away */ }
+  }
   if (onClose) onClose();
 }
-function onKeydown(event) { if (event.key === 'Escape') closeSheet(); }
+
+const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+function onKeydown(event) {
+  if (!activeOverlay) return;
+  if (event.key === 'Escape') { closeSheet(); return; }
+  if (event.key !== 'Tab') return;
+  // Keep Tab inside the dialog: a modal that leaks focus into the page behind
+  // is a dead end for keyboard and screen-reader users.
+  const items = [...activeOverlay.scrim.querySelectorAll(TABBABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
+  if (!items.length) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  const current = document.activeElement;
+  const inside = activeOverlay.scrim.contains(current);
+  if (event.shiftKey && (current === first || !inside)) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && (current === last || !inside)) { event.preventDefault(); first.focus(); }
+}
 
 /**
  * Open a bottom sheet (mobile) / modal (desktop).
@@ -117,6 +138,7 @@ function onKeydown(event) { if (event.key === 'Escape') closeSheet(); }
  */
 export function sheet({ title, subtitle, body = '', footer = '', onClose, dismissible = true } = {}) {
   closeSheet();
+  const returnFocus = document.activeElement;
   const root = document.getElementById('overlay-root') || document.body;
   const scrim = document.createElement('div');
   scrim.className = 'scrim';
@@ -133,7 +155,7 @@ export function sheet({ title, subtitle, body = '', footer = '', onClose, dismis
   });
   root.append(scrim);
   document.addEventListener('keydown', onKeydown);
-  activeOverlay = { scrim, onClose };
+  activeOverlay = { scrim, onClose, returnFocus };
   const focusable = scrim.querySelector('input, select, textarea, button:not([data-action="sheet-close"])');
   if (focusable) setTimeout(() => focusable.focus(), 60);
   return { root: scrim, body: bodyEl, close: closeSheet };

@@ -1,7 +1,9 @@
 /* ShebaShathi service worker.
-   Cache-first for the static shell and artwork, network-first for API calls,
-   with an offline fallback for navigations. Bump CACHE to invalidate. */
-const CACHE = 'shebashathi-shell-v3';
+   Code and documents are network-first with a cache fallback, so a deploy is
+   never masked by a stale cache while still working offline; artwork is
+   cache-first because it rarely changes and is the heaviest to refetch.
+   Bump CACHE to invalidate. */
+const CACHE = 'shebashathi-shell-v5';
 const SHELL = [
   './',
   './index.html',
@@ -21,8 +23,32 @@ const SHELL = [
   './src/shell.js'
 ];
 
+/* Last-resort page when the app itself has never been cached. It is written by
+   hand here, uses no network and no external asset, and says plainly what
+   happened in both languages. */
+const OFFLINE_HTML = `<!doctype html>
+<html lang="bn">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>সেবাসাথী — অফলাইন / ShebaShathi — offline</title>
+<style>body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#F6F5F2;color:#141B2E;font:16px/1.5 system-ui,"Noto Sans Bengali","Nirmala UI",sans-serif;padding:24px}
+.card{max-width:420px;text-align:center;background:#fff;border:1px solid #E2DFD8;border-radius:20px;padding:28px 22px;box-shadow:0 10px 30px rgba(20,27,46,.08)}
+h1{font-size:20px;margin:0 0 8px}p{margin:0 0 6px;color:#4B5563}a{display:inline-block;margin-top:16px;background:#A5542A;color:#fff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700}</style>
+</head>
+<body><div class="card">
+<h1>আপনি এখন অফলাইনে আছেন</h1>
+<p>সেবাসাথী এখনো এই ডিভাইসে সংরক্ষিত হয়নি। ইন্টারনেট সংযোগ ফিরে এলে আবার চেষ্টা করুন।</p>
+<p>You are offline, and ShebaShathi is not saved on this device yet. Reconnect and try again.</p>
+<a href="./">আবার চেষ্টা করুন · Try again</a>
+</div></body></html>`;
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches.open(CACHE)
+      // Each file is added on its own: one missing image must not cost the
+      // whole offline shell, the way a single cache.addAll() failure would.
+      .then((cache) => Promise.allSettled(SHELL.map((url) => cache.add(url))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (event) => {
@@ -43,22 +69,36 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')) return;
 
   if (request.mode === 'navigate') {
+    // Live document first; offline serves the saved shell, and if the shell was
+    // never saved the visitor still gets a real page that explains the state.
     event.respondWith(
-      fetch(request).catch(() => caches.match('./index.html'))
+      fetch(request).catch(async () => (
+        (await caches.match('./index.html'))
+        || (await caches.match('./'))
+        || new Response(OFFLINE_HTML, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } })
+      ))
     );
     return;
   }
 
+  const cacheFirst = /\.(?:png|jpe?g|webp|svg|woff2?|ico)$/i.test(url.pathname);
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
+    cacheFirst
+      ? caches.match(request).then((cached) => cached || fetch(request).then((response) => {
         if (response && response.ok && response.type === 'basic') {
           const copy = response.clone();
           caches.open(CACHE).then((cache) => cache.put(request, copy));
         }
         return response;
-      }).catch(() => caches.match('./assets/illustrations/offline.svg'));
-    })
+      }).catch(() => caches.match('./assets/illustrations/offline.svg')))
+      /* Network-first for modules and stylesheets: an updated file always wins
+         while the app is online, and the cached copy keeps it working offline. */
+      : fetch(request).then((response) => {
+        if (response && response.ok && response.type === 'basic') {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      }).catch(() => caches.match(request).then((cached) => cached || Response.error()))
   );
 });

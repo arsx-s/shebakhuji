@@ -7,8 +7,9 @@ import { api, openEventStream } from './api.js';
 import { getState, setState, subscribe } from './store.js';
 import { getLang, initLang, onLangChange, setLang, t } from './i18n.js';
 import { bindActions, icon, register, toast, observeReveals, closeSheet } from './ui.js';
-import { route, setFallback, startRouter, resolve, currentRoute, onRouteChange } from './router.js';
+import { route, setFallback, startRouter, resolve, currentRoute, onRouteChange, go } from './router.js';
 import { publicChrome, appChrome, homeFor } from './shell.js';
+import { detachMap } from './map.js';
 
 /* view modules register their own actions on import */
 import { landing, howItWorks, providersPage, publicSupport, notFoundPublic, loadServices } from './views/public.js';
@@ -44,6 +45,25 @@ function routes() {
   route('/how-it-works', howItWorks);
   route('/providers', providersPage);
   route('/support', publicSupport);
+  // Deep link for "Become a provider" / "Create account": renders the welcome
+  // screen and opens the registration sheet on top of it. Dismissing the sheet
+  // returns to the welcome screen, so the link is never a dead end.
+  route('/register', async (params, query) => {
+    const state = getState();
+    if (state.user) return { redirect: homeFor(state.user.role) };
+    const role = query && query.role === 'WORKER' ? 'WORKER' : 'CUSTOMER';
+    const view = await landing();
+    return {
+      ...view,
+      after: () => {
+        if (view.after) view.after();
+        openAuth('register', {
+          role,
+          onClose: () => { if (!getState().user && window.location.hash.startsWith('#/register')) go('#/'); }
+        });
+      }
+    };
+  });
 
   // shared
   route('/explore', exploreView);
@@ -124,7 +144,8 @@ async function render() {
     return;
   }
   const body = result.body || '';
-  root().innerHTML = result.chrome === 'app' ? appChrome({ body, active: result.active }) : publicChrome({ body, active: result.active });
+  detachMap(); // the map pauses while it is off screen; the home view re-attaches it
+  root().innerHTML = result.chrome === 'app' ? appChrome({ body, active: result.active, full: result.full }) : publicChrome({ body, active: result.active });
   document.title = `${t('brand.name')} — ${t('brand.tagline')}`;
   observeReveals();
   if (typeof result.after === 'function') result.after();
@@ -147,8 +168,12 @@ function errorBlock(error) {
 function registerGlobalActions() {
   register('nav', (data) => { window.location.hash = data.href; });
   register('open-login', () => openAuth('login'));
-  register('open-register', () => openAuth('register', { role: 'CUSTOMER' }));
-  register('auth-switch', (data) => openAuth(data.mode));
+  register('open-register', (data) => openAuth('register', { role: data.role === 'WORKER' ? 'WORKER' : 'CUSTOMER' }));
+  register('auth-switch', (data, event, el) => {
+    const scope = el.closest('.sheet');
+    const hidden = scope && scope.querySelector('input[name="role"]');
+    openAuth(data.mode, { role: hidden && hidden.value === 'WORKER' ? 'WORKER' : 'CUSTOMER' });
+  });
   register('auth-role', (data, event, el) => {
     el.parentElement.querySelectorAll('.choice').forEach((c) => c.setAttribute('aria-pressed', String(c === el)));
     const hidden = el.closest('.field').querySelector('input[name="role"]');

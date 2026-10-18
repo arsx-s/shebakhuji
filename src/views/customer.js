@@ -11,11 +11,16 @@ import {
 } from '../ui.js';
 import { getState, setState, serviceById } from '../store.js';
 import { formatDate, formatDateTime, formatTime, relativeDay, formatNumber } from '../i18n.js';
+import {
+  attachMap, clearMapPlace, clearPlace, detachMap, focusPlace, getMap, getMapStatus, mapCapability, onMapStatus, readPlace,
+  renderWorkerMarkers, requestDeviceLocation, savePlace, setMapLanguage, setPickMode, formatCoordinates
+} from '../map.js';
 import { categoryCard } from './public.js';
 import { refreshNotifications } from './auth.js';
 
 const OPEN_STATUSES = ['CONFIRMED', 'WORKER_TRAVELLING', 'WORKER_ARRIVED', 'WORK_IN_PROGRESS', 'COMPLETION_REQUESTED'];
 export const isOpen = (s) => OPEN_STATUSES.includes(s);
+const HOME_TABS = ['services', 'nearby', 'recent'];
 
 function greeting() {
   const hour = new Date().getHours();
@@ -56,70 +61,301 @@ export function providerCard(provider) {
   </button>`;
 }
 
-/* ======================= home =========================================== */
+/* ======================= home (map-first) ===============================
+   The customer home IS the map. Categories, the real list of nearby
+   providers and recent jobs live in the sheet that floats over it, and the
+   chosen location is carried into the booking wizard, so the map stays the
+   primary surface the way it does in a native ride app.
+   ======================================================================== */
+let homeTab = 'services';
+/* Whether the map is currently armed to drop a pin. Kept across re-renders of
+   this screen so a notification cannot silently disarm it, and cleared as soon
+   as the pin lands. */
+let pickMode = false;
+let stopStatusListener = null;
+
+const placeText = (place) => {
+  if (!place) return t('map.noLocation');
+  if (place.label) return place.label;
+  return Number.isFinite(place.lat) ? formatCoordinates(place.lat, place.lng) : t('map.noLocation');
+};
+
+/* The status strip under the sheet header. map.js owns the state, the view
+   only paints it, so a style or tile failure appears without a re-render —
+   re-rendering would throw the map away. */
+function paintMapStatus(status) {
+  const slot = document.querySelector('[data-role="map-status-slot"]');
+  if (!slot) return;
+  // When the whole pane already explains that the map is off, repeating it in
+  // the sheet is noise.
+  if (document.querySelector('.map-unavailable')) { slot.innerHTML = ''; return; }
+  const online = typeof navigator === 'undefined' ? true : navigator.onLine;
+  if (!online) {
+    slot.innerHTML = `<div class="map-status">${icon('Info')}<span>${esc(t('map.offline'))}</span></div>`;
+    return;
+  }
+  if (!status || status.state === 'ready' || status.state === 'idle' || status.state === 'pending') { slot.innerHTML = ''; return; }
+  const unconfigured = status.state === 'unconfigured';
+  const errored = !unconfigured && status.state !== 'tiles-error';
+  const key = status.state === 'tiles-error' ? 'map.tilesError' : unconfigured ? 'map.unconfigured' : 'map.unavailableBody';
+  slot.innerHTML = `<div class="map-status${errored ? ' err' : ''}">${icon(errored ? 'Circle_Warning' : 'Info')}<span>${esc(t(key))}</span></div>`;
+}
+
+function updatePlaceChip() {
+  const place = readPlace();
+  const label = placeText(place);
+  const chip = document.querySelector('[data-role="map-place-chip"]');
+  if (chip) chip.querySelector('span').textContent = label;
+  const mirror = document.querySelector('[data-role="map-place-mirror"]');
+  if (mirror) mirror.textContent = label;
+  // The bar keeps the profile area when nothing has been chosen, so it never
+  // shows an empty state where an address used to be.
+  const appbar = document.querySelector('[data-role="appbar-place"]');
+  if (appbar) {
+    const user = getState().user || {};
+    appbar.textContent = (place && place.label) || user.area || user.district || t('home.locationDefault');
+  }
+}
+
+/* One handler for every way of dropping the pin, so the chip, the saved place
+   and the map marker always move together. */
+function handleMapPick(coords) {
+  // No invented label: the chip shows the real coordinates until the customer
+  // names the place in the address sheet.
+  const picked = savePlace({ lat: coords.lat, lng: coords.lng, source: 'pin' });
+  pickMode = false;
+  setPickMode(false);
+  updatePlaceChip();
+  toast(`${t('map.pinPicked')} — ${formatCoordinates(picked.lat, picked.lng)}`, 'success');
+}
+
+function nearbyRow(worker) {
+  const skills = (worker.skills || []).slice(0, 3).map((s) => serviceName(serviceById(s) || { id: s, bn: s, en: s }));
+  const distance = worker.distanceKm != null ? t('map.nearbyDistance', { km: formatNumber(worker.distanceKm, { maximumFractionDigits: 1 }) }) : '';
+  return `<button class="map-list-item" data-action="view-provider" data-id="${esc(worker.id)}">
+    ${avatar(worker)}
+    <span class="grow" style="min-width:0">
+      <span class="row" style="gap:6px">
+        <b>${esc(worker.name || t('common.unknown'))}</b>
+        ${worker.verified ? `<span class="tag done">${icon('Shield_Check')}${esc(t('account.verifiedBadge'))}</span>` : ''}
+      </span>
+      <span class="muted small clamp-2" style="display:block">${esc(skills.join(' · '))}</span>
+      <span class="row" style="gap:10px;margin-top:4px">
+        ${stars(worker.rating)}
+        ${distance ? `<span class="small muted num">${esc(distance)}</span>` : ''}
+      </span>
+    </span>
+    ${icon('Chevron_Right')}
+  </button>`;
+}
+
+function nearbyPanel({ workers, failed }) {
+  if (failed) {
+    return `<div class="stack-sm">
+      <h2 class="h3">${esc(t('map.nearbyTitle'))}</h2>
+      <div class="notice err">${icon('Circle_Warning')}<span>${esc(t('map.nearbyFailed'))}</span></div>
+      <button class="btn secondary sm" data-action="retry">${icon('Arrow_Reload_02')}${esc(t('common.retry'))}</button>
+    </div>`;
+  }
+  if (!workers.length) {
+    return `<h2 class="h3" style="margin-bottom:8px">${esc(t('map.nearbyTitle'))}</h2>
+      ${emptyState({ art: 'assets/illustrations/empty-providers.svg', title: t('map.nearbyEmpty'), body: t('map.nearbyEmptyBody'), action: `<button class="btn" data-action="start-booking">${esc(t('explore.requestInstead'))}</button>` })}`;
+  }
+  return `<div class="row-between" style="margin-bottom:10px">
+      <h2 class="h3">${esc(t('map.nearbyTitle'))}</h2>
+      <span class="tag progress">${icon('Radio_Fill')}${esc(t('map.nearbyCount', { count: formatNumber(workers.length) }))}</span>
+    </div>
+    <p class="muted small" style="margin-bottom:12px">${esc(t('map.nearbySub'))}</p>
+    <div>${workers.map(nearbyRow).join('')}</div>`;
+}
+
 export async function homeView() {
   const state = getState();
   const user = state.user;
   if (!user) return { redirect: '#/' };
   if (user.role !== 'CUSTOMER') return { redirect: user.role === 'WORKER' ? '#/work' : '#/admin' };
 
-  const [services, bookings, providers] = await Promise.all([
-    state.services.length ? Promise.resolve(state.services) : api.services().then((r) => { setState({ services: r.services || [] }); return r.services || []; }).catch(() => []),
+  const services = state.services.length ? state.services : await api.services().then((r) => { setState({ services: r.services || [] }); return r.services || []; }).catch(() => []);
+
+  const place = readPlace();
+  const [bookings, capability] = await Promise.all([
     api.bookings().then((r) => r.bookings || []).catch(() => []),
-    api.providers({}).then((r) => r.providers || []).catch(() => [])
+    mapCapability()
   ]);
 
+  let workers = [];
+  let nearbyFailed = false;
+  try {
+    const res = await api.discoveryWorkers(place ? { latitude: place.lat, longitude: place.lng } : {});
+    workers = res.workers || [];
+  } catch { nearbyFailed = true; }
+
   const active = bookings.find((b) => isOpen(b.status));
-  const recent = bookings.filter((b) => b.status === 'COMPLETED').slice(0, 3);
-  const featured = providers.filter((p) => p.available).slice(0, 4);
-  const fallbackFeatured = featured.length ? featured : providers.slice(0, 4);
+  const recent = bookings.filter((b) => b.status === 'COMPLETED').slice(0, 5);
+  const tab = HOME_TABS.includes(homeTab) ? homeTab : 'services';
+
+  const panels = [
+    ['services', 'map.tabServices', 'More_Grid_Small', `${active ? activeBookingCard(active) : ''}
+      <section>
+        <div class="section-head" style="margin-bottom:var(--s-3)">
+          <h2 class="h3">${esc(t('home.quickTitle'))}</h2>
+          <a class="btn ghost sm" href="#/explore">${esc(t('common.seeAll'))}</a>
+        </div>
+        <div class="grid grid-cat">${services.map((s) => categoryCard(s, { compact: true })).join('')}</div>
+      </section>
+      <p class="map-privacy">${icon('Shield_Check')} ${esc(t('map.privacy'))}</p>`],
+    ['nearby', 'map.tabNearby', 'Navigation', nearbyPanel({ workers, failed: nearbyFailed })],
+    ['recent', 'map.tabRecent', 'List_Checklist', recent.length
+      ? `<h2 class="h3" style="margin-bottom:8px">${esc(t('map.recentTitle'))}</h2><div>${recent.map(bookingRow).join('')}</div>`
+      : `<h2 class="h3" style="margin-bottom:8px">${esc(t('map.recentTitle'))}</h2>${emptyState({ art: 'assets/illustrations/empty-bookings.svg', title: t('activity.noBookings'), body: t('activity.noBookingsBody'), action: `<button class="btn" data-action="start-booking">${esc(t('activity.browse'))}</button>` })}`]
+  ];
 
   const body = `
-    <div class="stack-lg">
-      <section class="reveal">
-        <p class="eyebrow">${esc(greeting())}</p>
-        <h1>${esc(user.name)}</h1>
-        <p class="muted">${esc(t('home.whereTo'))}</p>
-        <form data-role="search-form" data-target="#/explore" style="margin-top:16px;max-width:640px">
-          <div class="searchbar">
-            ${icon('Search_Magnifying_Glass')}
-            <input name="q" type="search" placeholder="${esc(t('home.searchPh'))}" aria-label="${esc(t('home.searchPh'))}" />
-            <button class="btn" type="submit">${esc(t('landing.searchBtn'))}</button>
+  <div class="home-map" data-role="home-map">
+    <div class="map-pane">
+      <div class="map-host" data-role="map-host"${capability.configured ? '' : ' data-state="unavailable"'}></div>
+      ${capability.configured ? '' : `<div class="map-unavailable">
+        <div class="card">
+          <div class="icon-badge" style="margin:0 auto 10px">${icon('Map_Pin')}</div>
+          <h2 class="h3">${esc(t('map.unavailableTitle'))}</h2>
+          <p class="muted small" style="margin-top:8px">${esc(t('map.unavailableBody'))}</p>
+          <p class="muted tiny" style="margin-top:6px">${esc(capability.note || t('map.unconfigured'))}</p>
+          <div class="row" style="justify-content:center;margin-top:14px">
+            <button class="btn" data-action="map-place-menu">${icon('Map_Pin')}${esc(t('map.chooseTitle'))}</button>
+            <a class="btn secondary" href="#/explore">${esc(t('nav.explore'))}</a>
           </div>
-        </form>
-      </section>
-
-      ${active ? activeBookingCard(active) : ''}
-
-      <section class="reveal">
-        <div class="section-head"><h2>${esc(t('home.quickTitle'))}</h2><a class="btn ghost sm" href="#/explore">${esc(t('common.seeAll'))}</a></div>
-        <div class="grid grid-cat">
-          ${services.slice(0, 8).map((s) => categoryCard(s, { compact: true })).join('')}
         </div>
-      </section>
+      </div>`}
 
-      <section class="reveal">
-        <div class="section-head"><h2>${esc(t('home.featuredTitle'))}</h2><a class="btn ghost sm" href="#/explore">${esc(t('common.seeAll'))}</a></div>
-        ${fallbackFeatured.length
-          ? `<div class="grid grid-2">${fallbackFeatured.map(providerCard).join('')}</div>`
-          : emptyState({ art: 'assets/illustrations/empty-providers.svg', title: t('explore.noResults'), body: t('explore.noResultsBody'), action: `<button class="btn" data-action="start-booking">${esc(t('explore.requestInstead'))}</button>` })}
-      </section>
+      <div class="map-overlay map-overlay--top">
+        <form class="map-search glass" data-role="search-form">
+          ${icon('Search_Magnifying_Glass')}
+          <input name="q" type="search" placeholder="${esc(t('home.searchPh'))}" aria-label="${esc(t('home.searchPh'))}" />
+          <button class="btn sm pill" type="submit">${esc(t('landing.searchBtn'))}</button>
+        </form>
+        <div class="map-chips">
+          <button type="button" class="map-chip glass-soft" data-action="map-place-menu" data-role="map-place-chip" aria-label="${esc(`${t('map.yourLocation')} — ${placeText(place)}`)}">
+            ${icon('Map_Pin')}<span>${esc(placeText(place))}</span>
+          </button>
+          <button type="button" class="map-chip glass-soft" data-action="map-locate" aria-label="${esc(t('map.useMyLocation'))}">
+            ${icon('Navigation')}<span>${esc(t('map.useMyLocation'))}</span>
+          </button>
+        </div>
+      </div>
 
-      ${recent.length ? `
-        <section class="reveal">
-          <div class="section-head"><h2>${esc(t('home.recentTitle'))}</h2><a class="btn ghost sm" href="#/activity">${esc(t('home.allBookings'))}</a></div>
-          <div class="card">${recent.map(bookingRow).join('')}</div>
-        </section>` : ''}
+      <div class="map-controls glass-soft">
+        <button type="button" data-action="map-locate" aria-label="${esc(t('map.useMyLocation'))}">${icon('Navigation')}</button>
+        <button type="button" data-action="map-zoom-in" aria-label="${esc(t('map.zoomIn'))}">${icon('Add_Plus')}</button>
+        <button type="button" data-action="map-zoom-out" aria-label="${esc(t('map.zoomOut'))}">${icon('Remove_Minus')}</button>
+      </div>
+    </div>
 
-      <section class="reveal">
-        <div class="section-head"><h2>${esc(t('home.recommendTitle'))}</h2></div>
-        <div class="grid grid-3">${services.slice(0, 3).map((s) => `<button class="card flat" data-action="open-booking" data-service="${esc(s.id)}" style="text-align:left">
-          <div class="icon-badge teal" style="margin-bottom:8px">${icon(s.icon || 'Settings')}</div>
-          <b>${esc(serviceName(s))}</b><p class="muted small">${esc(serviceBlurb(s))}</p></button>`).join('')}</div>
-      </section>
-    </div>`;
-  return { body, chrome: 'app', active: 'home', after: () => observeReveals() };
+    <section class="map-sheet glass-solid" data-role="map-sheet" aria-label="${esc(t('map.yourLocation'))}">
+      <div class="map-sheet__grip">
+        <button type="button" data-action="toggle-map-sheet" aria-expanded="false" aria-label="${esc(t('map.expand'))}"></button>
+      </div>
+      <div class="map-sheet__head">
+        <div style="min-width:0">
+          <p class="eyebrow">${esc(greeting())}</p>
+          <h1 class="h3" style="margin-top:2px">${esc(user.name)}</h1>
+          <p class="muted tiny">${esc(t('home.whereTo'))}</p>
+        </div>
+        <a class="btn ghost icon sm" href="#/account/addresses" aria-label="${esc(t('account.addresses'))}">${icon('Map_Pin')}</a>
+      </div>
+      <div data-role="map-status-slot"></div>
+      <div class="segmented" role="tablist" aria-label="${esc(t('map.yourLocation'))}">
+        ${panels.map(([id, labelKey, ic]) => `<button type="button" role="tab" id="tab-${id}" aria-controls="panel-${id}" aria-selected="${tab === id}" data-action="map-tab" data-tab="${id}">${icon(ic)}${esc(t(labelKey))}</button>`).join('')}
+      </div>
+      <div class="map-sheet__body">
+        ${panels.map(([id, , , content]) => `<div role="tabpanel" id="panel-${id}" aria-labelledby="tab-${id}" data-role="map-panel" data-tab="${id}"${tab === id ? '' : ' hidden'}>${content}</div>`).join('')}
+        <p class="map-credit" style="margin-top:14px">${esc(t('map.credit'))}: ${esc(capability.attribution || 'OpenStreetMap contributors')}</p>
+      </div>
+    </section>
+  </div>`;
+
+  return {
+    body,
+    chrome: 'app',
+    active: 'home',
+    full: true,
+    after: () => {
+      observeReveals();
+      paintMapStatus(getMapStatus());
+      if (stopStatusListener) stopStatusListener();
+      stopStatusListener = onMapStatus(paintMapStatus);
+      const host = document.querySelector('[data-role="map-host"]');
+      const center = place && Number.isFinite(place.lat) ? { lat: place.lat, lng: place.lng } : undefined;
+      attachMap(host, { center }).then((map) => {
+        if (!map) { setStatusSlotFromCapability(capability); return; }
+        setMapLanguage(); // the interface language may have changed since the map loaded
+        if (workers.length) renderWorkerMarkers(workers);
+        if (place) focusPlace(place);
+      }).catch(() => { /* the status strip already reports it */ });
+      setPickMode(pickMode, handleMapPick);
+    }
+  };
 }
+
+function setStatusSlotFromCapability(capability) {
+  const host = document.querySelector('[data-role="map-host"]');
+  if (host) host.dataset.state = 'unavailable';
+  paintMapStatus({ state: capability.configured ? 'unavailable' : 'unconfigured' });
+}
+
+/* Sheet of location choices: device location, a pin on the map, or typed in.
+   Saving creates a real address record through the properties endpoint. */
+function openPlaceSheet() {
+  const current = readPlace();
+  const dialog = sheet({
+    title: t('map.chooseTitle'),
+    subtitle: t('map.chooseBody'),
+    body: `<div class="stack">
+      <div class="row wrap">
+        <button type="button" class="btn" data-action="map-locate">${icon('Navigation')}${esc(t('map.useMyLocation'))}</button>
+        <button type="button" class="btn secondary" data-action="map-pick" aria-pressed="${pickMode}">${icon('Map_Pin')}${esc(t('map.pinMode'))}</button>
+      </div>
+      <div class="notice">${icon('Info')}<span>${esc(t('map.pinHint'))}</span></div>
+      <p class="muted small">${icon('Map_Pin')} <b data-role="map-place-mirror">${esc(placeText(current))}</b>
+        ${current && Number.isFinite(current.lat) ? `<br /><span class="tiny">${esc(t('map.coordinates'))}: ${esc(formatCoordinates(current.lat, current.lng))}</span>` : ''}</p>
+      <form data-role="place-form" class="stack-sm">
+        <div class="form-row two">
+          <div class="field"><label for="place-district">${esc(t('map.district'))}</label>
+            <input id="place-district" name="district" value="${esc((current && current.district) || getState().user.district || 'Dhaka')}" /></div>
+          <div class="field"><label for="place-area">${esc(t('map.area'))}</label>
+            <input id="place-area" name="area" value="${esc((current && current.area) || getState().user.area || '')}" placeholder="Dhanmondi" /></div>
+        </div>
+        <div class="row wrap">
+          <button type="submit" class="btn">${icon('Check')}${esc(t('map.save'))}</button>
+          <button type="button" class="btn ghost" data-action="map-clear">${esc(t('map.clear'))}</button>
+        </div>
+      </form>
+    </div>`
+  });
+  const form = dialog.body.querySelector('[data-role="place-form"]');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = form.querySelector('button[type="submit"]');
+    const data = Object.fromEntries(new FormData(form));
+    const area = String(data.area || '').trim();
+    const district = String(data.district || '').trim();
+    if (!area || !district) { toast(t('booking.errFields'), 'error'); return; }
+    const pin = readPlace();
+    setBusy(button, true);
+    try {
+      await api.createProperty({
+        label: area.slice(0, 40), kind: 'HOME', district, area,
+        latitude: pin && Number.isFinite(pin.lat) ? pin.lat : null,
+        longitude: pin && Number.isFinite(pin.lng) ? pin.lng : null
+      });
+      savePlace({ ...(pin || {}), label: `${area}, ${district}`, area, district, source: pin && pin.lat ? 'pin' : 'manual' });
+      updatePlaceChip();
+      closeSheet();
+      toast(t('map.saved'), 'success');
+    } catch (error) { toast(t(errorKey(error)), 'error'); } finally { setBusy(button, false); }
+  });
+}
+
+/* ---------- provider card (unchanged) ----------------------------------- */
 
 function activeBookingCard(booking) {
   const request = booking.request || {};
@@ -133,7 +369,7 @@ function activeBookingCard(booking) {
       <div class="row" style="margin-top:10px;gap:14px;align-items:flex-start">
         <div class="icon-badge">${icon((service && service.icon) || 'Settings')}</div>
         <div class="grow">
-          <h3>${esc(serviceName(service) || request.service)}</h3>
+          <h2 class="h3" style="margin:0">${esc(serviceName(service) || request.service)}</h2>
           <p class="muted small">${esc(relativeDay(request.date))} · ${esc(money(booking.pricing && booking.pricing.total))}</p>
           <p class="muted small">${booking.worker ? esc(booking.worker.name) : esc(t('track.unassigned'))}</p>
         </div>
@@ -428,6 +664,7 @@ export async function bookingDetailView(params) {
   const service = serviceById(request.service);
   const isCustomer = booking.customerId === state.user.id;
   const other = isCustomer ? booking.worker : booking.customer;
+  const hasCoords = Number.isFinite(request.latitude) && Number.isFinite(request.longitude);
   let events = [];
   try { events = (await api.bookingEvents(params.id)).events || []; } catch { events = []; }
 
@@ -487,13 +724,13 @@ export async function bookingDetailView(params) {
       </div>
 
       <div class="card reveal">
-        <h2 class="h3">${esc(t('track.mapNote'))}</h2>
-        <div class="map-frame" style="margin-top:12px">
-          <div class="map-grid">
-            <span class="map-pin" style="left:46%;top:38%">${icon('Map_Pin')}</span>
-            <div class="map-note">${esc([request.area, request.district].filter(Boolean).join(', '))} — ${esc(t(request.latitude != null && request.longitude != null ? 'track.mapExact' : 'track.mapApprox'))}</div>
-          </div>
+        <h2 class="h3">${esc(t('track.locationTitle'))}</h2>
+        <div class="stack-sm small" style="margin-top:12px">
+          <div class="row-between"><span class="muted">${esc(t('track.location'))}</span><b style="text-align:right">${esc([request.area, request.district].filter(Boolean).join(', ') || '—')}</b></div>
+          ${hasCoords ? `<div class="row-between"><span class="muted">${esc(t('map.coordinates'))}</span><b class="num" style="text-align:right">${esc(formatCoordinates(request.latitude, request.longitude))}</b></div>` : ''}
         </div>
+        <p class="muted small" style="margin-top:10px">${esc(hasCoords ? t('track.coordsNote') : t('track.areaNote'))}</p>
+        ${hasCoords ? `<button type="button" class="btn secondary block" style="margin-top:12px" data-action="view-booking-map" data-id="${esc(booking.id)}">${icon('Map_Pin')}${esc(t('track.showOnMap'))}</button>` : ''}
       </div>
 
       ${booking.review ? `
@@ -792,4 +1029,87 @@ register('transition-booking', async (data, event, el) => {
     refreshNotifications();
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   } catch (error) { toast(t(errorKey(error)), 'error'); } finally { setBusy(el, false); }
+});
+
+/* ======================= map actions ==================================== */
+register('map-tab', (data, event, el) => {
+  homeTab = data.tab;
+  const scope = el.closest('.map-sheet') || document;
+  scope.querySelectorAll('[role="tab"]').forEach((tab) => tab.setAttribute('aria-selected', String(tab === el)));
+  scope.querySelectorAll('[data-role="map-panel"]').forEach((panel) => { panel.hidden = panel.dataset.tab !== data.tab; });
+});
+
+/* The sheet is a real bottom sheet: the grip expands and collapses it. */
+register('toggle-map-sheet', (data, event, el) => {
+  const scope = el.closest('.map-sheet');
+  if (!scope) return;
+  const open = scope.classList.toggle('open');
+  el.setAttribute('aria-expanded', String(open));
+  el.setAttribute('aria-label', t(open ? 'map.collapse' : 'map.expand'));
+});
+
+register('map-zoom-in', () => { const map = getMap(); if (map) map.zoomIn(); });
+register('map-zoom-out', () => { const map = getMap(); if (map) map.zoomOut(); });
+
+/* Device location is only requested from this explicit press, after the user
+   has been told what it is for (see the place sheet copy). */
+register('map-locate', async (data, event, el) => {
+  setBusy(el, true);
+  toast(t('map.locating'), 'info');
+  try {
+    const position = await requestDeviceLocation();
+    const place = savePlace({
+      lat: position.lat, lng: position.lng,
+      label: t('map.currentLocation'), source: 'device',
+      accuracy: Math.round(position.accuracy || 0)
+    });
+    focusPlace(place);
+    updatePlaceChip();
+    toast(t('map.found'), 'success');
+  } catch (error) {
+    toast(t(`map.err.${error.code || 'unavailable'}`), 'error');
+  } finally { setBusy(el, false); }
+});
+
+register('map-place-menu', () => openPlaceSheet());
+
+register('map-pick', () => {
+  pickMode = true;
+  setPickMode(true, handleMapPick);
+  closeSheet();
+  toast(t('map.pinMode'), 'info');
+});
+
+register('map-clear', () => {
+  clearPlace();
+  clearMapPlace();
+  updatePlaceChip();
+  closeSheet();
+  toast(t('map.cleared'), 'info');
+});
+
+/* A booking keeps its own location. The map is the same session instance, shown
+   in a sheet and moved to the booking's real coordinates — nothing is drawn from
+   a template, and when no coordinates were shared there is no map to show. */
+register('view-booking-map', async (data) => {
+  let booking;
+  try { booking = (await api.booking(data.id)).booking; } catch (error) { toast(errorKey(error), 'error'); return; }
+  const request = booking.request || {};
+  if (!Number.isFinite(request.latitude) || !Number.isFinite(request.longitude)) { toast(t('track.noExactLocation'), 'info'); return; }
+  const label = [request.area, request.district].filter(Boolean).join(', ');
+  const dialog = sheet({
+    title: t('track.locationTitle'),
+    subtitle: label,
+    body: `<div class="map-slot map-slot--sheet"><div class="map-slot__host" data-role="booking-view-map"></div></div>`,
+    onClose: () => detachMap()
+  });
+  const host = dialog.body.querySelector('[data-role="booking-view-map"]');
+  const place = { lat: request.latitude, lng: request.longitude, label };
+  const map = await attachMap(host, { center: { lat: place.lat, lng: place.lng } }).catch(() => null);
+  if (!map) {
+    host.dataset.state = 'unavailable';
+    host.innerHTML = `<div class="map-unavailable"><p><b>${esc(t('map.unavailableTitle'))}</b></p><p>${esc(t('map.unavailableBody'))}</p></div>`;
+    return;
+  }
+  focusPlace(place);
 });

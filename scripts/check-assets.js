@@ -28,7 +28,7 @@ const sources = [
   ...walk(nodePath.join(root, 'assets', 'styles'), (f) => f.endsWith('.css'))
 ];
 
-const assetPattern = /['"(]\.?\/?(assets\/[A-Za-z0-9_\-./]+\.(?:svg|png|jpg|jpeg|webp|css|woff2?))['")]/g;
+const assetPattern = /['"(](?:\.{1,2}\/)*(assets\/[A-Za-z0-9_\-./]+\.(?:svg|png|jpg|jpeg|webp|css|mjs|woff2?))['")]/g;
 
 for (const source of sources) {
   const text = fs.readFileSync(source, 'utf8');

@@ -81,6 +81,27 @@ node scripts/clean-test-data.js --since=2026-10-18 --apply
 
 The script backs `data/database.json` up to `data/backups/` before writing.
 
+## Maps
+
+The map is MapLibre GL JS, vendored into `assets/vendor/maplibre/` by
+`npm run vendor:map` (no CDN at runtime, and the ~1.6 MB bundle is imported
+dynamically so it loads only on screens that actually show a map).
+
+The server reads one variable and hands the result to the browser through
+`GET /api/public/config`, so no style URL or token is ever hardcoded:
+
+| `MAP_STYLE_URL` | Result |
+| --- | --- |
+| unset | development default: `https://tiles.openfreemap.org/styles/liberty` (keyless, needs internet) |
+| a style JSON URL | used as-is — MapTiler, Protomaps, your own tiles or a country extract; keep any token in `.env`, never in the repo |
+| `none` | the map is switched off and the client shows its honest unavailable state; address entry and booking still work |
+
+One MapLibre instance is created per session and re-parented between screens
+(`src/map.js`), so switching routes never rebuilds the map. The chosen location is
+stored on the device (`shebashathi.place`) and carried into the booking wizard.
+Map tiles are cross-origin and are never cached by the service worker, so offline
+the map says tiles cannot load rather than showing a stale surface.
+
 ## Android
 
 See `ANDROID_BUILD.md`. The web bundle is prepared into `www/` with
@@ -93,7 +114,12 @@ See `ANDROID_BUILD.md`. The web bundle is prepared into `www/` with
   A transactional database is the next real step; see `DATABASE_ARCHITECTURE.md`.
 - Payments are recorded, not charged: no payment gateway is integrated, and the
   UI labels payment as "pay in cash / unpaid" rather than pretending otherwise.
-- Maps show the booking address as an approximation, clearly labelled. No live
-  GPS tracking or live ETA is claimed.
+- Maps are real MapLibre GL maps drawn from a style you configure
+  (`MAP_STYLE_URL`, see below). There is **no live GPS tracking, no live ETA and
+  no invented markers**: only a location the customer explicitly picked and
+  worker positions that a worker has actually shared. With no style configured
+  the client shows an honest "map unavailable" state and address entry still
+  works; map tiles need internet, so offline the map reports that tiles cannot
+  load instead of showing a stale or fake surface.
 - Layout quality is verified at 320/390/768/desktop widths; screenshots and
   audits are manual, not part of CI.

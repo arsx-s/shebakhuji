@@ -7,30 +7,36 @@ Architecture, conventions and current status for whoever picks this up next.
 ```
 server.js              HTTP API + JSON store + dev seed (single process)
 index.html             app shell, boot splash, PWA wiring
-sw.js                  service worker (network-first for API, stale-while for shell)
+sw.js                  service worker: network-first for code/documents with a
+                       cache fallback, cache-first for images, API untouched
 manifest.webmanifest   PWA manifest
 src/
   app.js               boots, owns the route table and the single render loop
   router.js            hash matching, param/query parsing, route listeners
   shell.js             public chrome, app chrome (app bar, side nav, bottom nav)
-  ui.js                action bus, toasts, sheets, tags, empty states, icon()
+  ui.js                action bus, toasts, sheets (focus trap + focus return), tags, icon()
   api.js               fetch wrapper, ApiError, error→translation-key map
   store.js             tiny observable state (user, services, fees, online…)
   i18n.js               bn/en dictionaries, t(), number/date/currency formats
   config.js            API base URL resolution (web vs native)
+  map.js               the one MapLibre instance: attach/re-parent, pick mode,
+                       places, worker markers, language, honest status states
   views/               public, auth, customer, booking, account, provider, admin
 assets/
   styles/app.css       the design system (tokens → components → overrides)
   coolicons-sprite.svg 885 symbols; icon('Name') inlines one
   illustrations/       original flat-vector art from scripts/generate-art.js
   photos/              service photography
+  vendor/maplibre/     vendored MapLibre GL build (see scripts/vendor-map.js)
 scripts/
   check-modules.js     parses every ES module
   check-assets.js      every referenced file and icon name must exist
   check-forms.js       number inputs must accept ordinary values
   check-blocks.js      no markup block is built and then never rendered
+  check-vendor.js      the vendored map build is present and complete
+  vendor-map.js        copies the MapLibre build from node_modules into assets/
   generate-art.js      regenerates illustrations/brand assets
-  prepare-web.js       builds www/ for Capacitor
+  prepare-web.js       builds www/ for Capacitor (vendors the map first)
   clean-test-data.js   removes test/QA records (backs up first)
 ```
 
@@ -103,8 +109,13 @@ scripts/
 - **Android APK not built.** `java`/`adb`/`gradle` missing and no SDK path in this
   environment. The web bundle and Capacitor sync can be prepared.
 - **Single-process store.** No transactions, no locking.
-- **No payment gateway, no SMS/email OTP, no live map/GPS.** These are labelled
-  as unavailable in the UI rather than faked.
+- **No payment gateway and no SMS/email OTP.** These are labelled as
+  unavailable in the UI rather than faked.
+- **Maps are real, tracking is not.** MapLibre GL renders a configured style and
+  shows only locations a person actually provided (a picked point, a saved
+  address, a worker position the worker shared). There is no simulated movement,
+  no ETA and no invented worker marker. Tiles require internet and are never
+  cached, so offline the map says so.
 - Automated browser tests are not in CI; the visual/behavioural pass is manual.
 
 ## Next priorities
@@ -113,4 +124,5 @@ scripts/
 2. CI that runs `npm run check` and `npm test` on every change.
 3. Playwright (or similar) smoke tests for the flows listed above, run headless.
 4. Payment gateway adapter behind the existing invoice/transaction records.
-5. Real map provider behind the clearly-marked map boundary component.
+5. Geocoding/search adapter so a picked point gets a real street address instead
+   of raw coordinates (the client stores coordinates and never invents a name).

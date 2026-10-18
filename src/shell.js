@@ -6,6 +6,7 @@
 import { esc, icon, avatar } from './ui.js';
 import { t, getLang } from './i18n.js';
 import { getState, unreadCount } from './store.js';
+import { readPlace } from './map.js';
 
 export const NAV = {
   CUSTOMER: [
@@ -130,7 +131,10 @@ function publicFooter() {
 function appbar(state) {
   const user = state.user;
   const unread = unreadCount();
-  const location = (user && (user.area || user.district)) || '';
+  /* The chosen service location is shared with the map home through the map
+     session, so the bar and the map can never disagree. */
+  const place = readPlace();
+  const location = (place && place.label) || (user && (user.area || user.district)) || '';
   return `
   <header class="appbar">
     <div class="container appbar-inner">
@@ -142,7 +146,7 @@ function appbar(state) {
         ${icon('Map_Pin')}
         <span class="grow">
           <small>${esc(t('home.locationTitle'))}</small>
-          <b class="clamp-2">${esc(location || t('home.locationDefault'))}</b>
+          <b class="clamp-2" data-role="appbar-place">${esc(location || t('home.locationDefault'))}</b>
         </span>
       </a>
       <div class="row" style="gap:6px">
@@ -191,8 +195,18 @@ function bottomNav(state, active) {
   </nav>`;
 }
 
-export function appChrome({ body, active = '' } = {}) {
+export function appChrome({ body, active = '', full = false } = {}) {
   const state = getState();
+  /* A full-bleed view (the map-first home) owns the whole viewport: no
+     container padding and no desktop side navigation, because the map has to
+     reach the edges of the screen the way a native app's map does. */
+  if (full) {
+    return `
+    ${appbar(state)}
+    <main id="main" class="app-main app-main--full">${body}</main>
+    <div class="spacer-nav"></div>
+    ${bottomNav(state, active)}`;
+  }
   return `
     ${appbar(state)}
     <div class="container" style="padding-top:24px">

@@ -10,6 +10,9 @@ import {
 } from '../ui.js';
 import { getState, setState, serviceById } from '../store.js';
 import { formatDate, formatTime, formatNumber } from '../i18n.js';
+import {
+  attachMap, formatCoordinates, mapCapability, readPlace, requestDeviceLocation, savePlace, setPickMode
+} from '../map.js';
 import { refreshNotifications } from './auth.js';
 
 const STEPS = ['service', 'details', 'time', 'review'];
@@ -22,6 +25,9 @@ const flow = {
   district: '',
   area: '',
   address: '',
+  latitude: null,
+  longitude: null,
+  mapConfigured: null,
   saveAddress: false,
   urgency: 'NORMAL',
   mode: 'immediate',
@@ -59,6 +65,18 @@ async function init(params, query) {
   flow.forceOffers = query.mode === 'offers';
   flow.district = (user && user.district) || 'Dhaka';
   flow.area = (user && user.area) || '';
+  /* The place chosen on the map home is this booking's service address unless
+     the customer changes it here, so switching between map and list never
+     loses the location they picked. */
+  const savedPlace = readPlace();
+  if (savedPlace && Number.isFinite(savedPlace.lat)) {
+    flow.latitude = savedPlace.lat;
+    flow.longitude = savedPlace.lng;
+    if (savedPlace.area) flow.area = savedPlace.area;
+    if (savedPlace.district) flow.district = savedPlace.district;
+    if (!flow.address && savedPlace.label && savedPlace.source !== 'device') flow.address = savedPlace.label;
+  }
+  try { flow.mapConfigured = (await mapCapability()).configured; } catch { flow.mapConfigured = false; }
   if (flow.listingId && flow.serviceId) flow.step = 1;
   if (!state.services.length) { try { setState({ services: (await api.services()).services || [] }); } catch { /* ignore */ } }
   if (user) {
@@ -145,14 +163,23 @@ async function stepDetails() {
         <input id="flow-address" data-field="address" value="${esc(flow.address)}" placeholder="${esc(t('booking.addressPh'))}" /></div>
       <div class="row-between" style="gap:12px">
         <label class="row" style="gap:10px"><input type="checkbox" data-field="saveAddress" ${flow.saveAddress ? 'checked' : ''} style="width:20px;height:20px" /> <span>${esc(t('booking.saveAddress'))}</span></label>
-        <button type="button" class="btn ghost sm" data-action="flow-geolocate">${icon('Navigation')}${esc(t('booking.address'))}</button>
+        <button type="button" class="btn ghost sm" data-action="flow-geolocate">${icon('Navigation')}${esc(t('map.useMyLocation'))}</button>
       </div>
-      <div class="map-frame">
-        <div class="map-grid" style="min-height:200px">
-          <span class="map-pin" style="left:${flow.latitude ? '48%' : '46%'};top:${flow.latitude ? '42%' : '38%'}">${icon('Map_Pin')}</span>
-          <div class="map-note">${esc(t('home.locationHelp'))}</div>
+      ${flow.mapConfigured ? `
+        <div class="map-slot">
+          <div class="map-slot__host" data-role="booking-map" data-state="${flow.latitude ? 'placed' : 'empty'}"></div>
+          <button type="button" class="btn secondary sm map-slot__action" data-action="flow-pick">${icon('Map_Pin')}${esc(t('map.pinMode'))}</button>
         </div>
-      </div>
+        <p class="muted small" style="display:flex;gap:6px;align-items:flex-start">
+          ${icon(flow.latitude ? 'Circle_Check' : 'Info')}
+          <span>${flow.latitude
+            ? `${esc(t('map.pinPicked'))} · ${esc(formatCoordinates(flow.latitude, flow.longitude))}`
+            : esc(t('map.pinHint'))}</span>
+        </p>` : `
+        <div class="notice">
+          ${icon('Map_Pin')}
+          <span><b>${esc(t('map.unavailableTitle'))}</b><br />${esc(t('map.unavailableBody'))}</span>
+        </div>`}
       <div class="field"><label>${esc(t('booking.urgency'))}</label>
         <div class="pill-choices">
           <button type="button" class="choice" data-action="flow-urgency" data-value="NORMAL" aria-pressed="${flow.urgency === 'NORMAL'}">${icon('Clock')}${esc(t('booking.urgencyNormal'))}</button>
@@ -238,6 +265,8 @@ async function reviewBlock() {
         <div class="row-between"><span class="muted small">${esc(t('booking.describe'))}</span><b style="max-width:60%;text-align:right">${esc(flow.description)}</b></div>
         <hr class="divider" />
         <div class="row-between"><span class="muted small">${esc(t('booking.address'))}</span><b style="text-align:right">${esc([flow.address, flow.area, flow.district].filter(Boolean).join(', '))}</b></div>
+        ${flow.latitude ? `<hr class="divider" />
+        <div class="row-between"><span class="muted small">${esc(t('map.coordinates'))}</span><b class="num" style="text-align:right">${esc(formatCoordinates(flow.latitude, flow.longitude))}</b></div>` : ''}
         <hr class="divider" />
         <div class="row-between"><span class="muted small">${esc(t('booking.when'))}</span><b>${flow.mode === 'immediate' ? esc(t('booking.modeImmediate')) : `${esc(formatDate(flow.date))} · ${esc(formatTime(`2000-01-01T${flow.time}`))}`}</b></div>
       </div>
@@ -300,6 +329,27 @@ async function render() {
     input.addEventListener('input', () => { flow[input.dataset.field] = input.type === 'checkbox' ? input.checked : input.value; });
     input.addEventListener('change', () => { flow[input.dataset.field] = input.type === 'checkbox' ? input.checked : input.value; });
   });
+  mountBookingMap();
+}
+
+/* The address step shows the same single MapLibre instance the map home uses:
+   one WebGL context for the whole session, re-parented into the wizard. */
+function applyBookingPick(coords) {
+  flow.latitude = coords.lat;
+  flow.longitude = coords.lng;
+  // The chosen point becomes the session's service location, so the map home
+  // and the app bar agree with what the wizard will send to the server.
+  savePlace({ lat: coords.lat, lng: coords.lng, area: flow.area, district: flow.district, source: 'pin' });
+  toast(`${t('map.pinPicked')} — ${formatCoordinates(coords.lat, coords.lng)}`, 'success');
+  render();
+}
+
+async function mountBookingMap() {
+  const host = document.querySelector('[data-role="booking-map"]');
+  if (!host || !flow.mapConfigured) return;
+  const map = await attachMap(host, {}).catch(() => null);
+  if (!map) { host.dataset.state = 'unavailable'; return; }
+  setPickMode(true, applyBookingPick);
 }
 
 function syncFields() {
@@ -363,19 +413,25 @@ register('flow-next', () => {
   render();
 });
 
-register('flow-geolocate', () => {
-  if (!navigator.geolocation) { toast(t('home.locationHelp'), 'info'); return; }
-  const button = document.querySelector('[data-action="flow-geolocate"]');
+register('flow-geolocate', async (data, event, el) => {
+  const button = el || document.querySelector('[data-action="flow-geolocate"]');
   setBusy(button, true);
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      flow.latitude = pos.coords.latitude; flow.longitude = pos.coords.longitude;
-      toast(t('provider.locationShared'), 'success');
-      setBusy(button, false); render();
-    },
-    () => { setBusy(button, false); toast(t('home.locationHelp'), 'info'); },
-    { enableHighAccuracy: false, timeout: 8000 }
-  );
+  toast(t('map.locating'), 'info');
+  try {
+    const position = await requestDeviceLocation();
+    flow.latitude = position.lat;
+    flow.longitude = position.lng;
+    savePlace({ lat: position.lat, lng: position.lng, label: t('map.currentLocation'), area: flow.area, district: flow.district, source: 'device' });
+    toast(t('map.found'), 'success');
+    render();
+  } catch (error) {
+    toast(t(`map.err.${error.code || 'unavailable'}`), 'error');
+  } finally { setBusy(button, false); }
+});
+
+register('flow-pick', () => {
+  setPickMode(true, applyBookingPick);
+  toast(t('map.pinHint'), 'info');
 });
 
 register('flow-promo', async () => {

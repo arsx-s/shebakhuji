@@ -95,6 +95,34 @@ test('public stats report only real aggregate data', async () => {
   assert.ok(Number.isInteger(stats.completedBookings));
 });
 
+test('map configuration is served, and the development default needs no key', async () => {
+  const res = await call('/public/config', { cookie: '' });
+  assert.equal(res.status, 200);
+  const { map } = res.payload.config;
+  assert.match(map.styleUrl, /^https:\/\//, 'the client needs a real style document to render a map');
+  assert.equal(map.provider, new URL(map.styleUrl).host);
+  assert.equal(map.configured, 'development-default');
+  assert.match(map.note, /MAP_STYLE_URL/);
+});
+
+test('the vendored map runtime is served locally, not from a CDN', async () => {
+  for (const file of ['maplibre-gl.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css']) {
+    const response = await fetch(`${BASE.replace('/api', '')}/assets/vendor/maplibre/${file}`);
+    assert.equal(response.status, 200, `${file} must be served by the app itself`);
+    assert.ok(Number(response.headers.get('content-length')) > 1000, `${file} looks truncated`);
+  }
+});
+
+test('dotfiles, the database and dependencies are never served', async () => {
+  const origin = BASE.replace('/api', '');
+  for (const path of ['/.env', '/data/database.json', '/.git/config', '/node_modules/maplibre-gl/package.json', '/scripts/prepare-web.js']) {
+    const response = await fetch(`${origin}${path}`);
+    assert.equal(response.status, 403, `${path} must not be readable by a browser`);
+  }
+  const asset = await fetch(`${origin}/assets/styles/app.css`);
+  assert.equal(asset.status, 200, 'the real bundle must still be served');
+});
+
 test('login controls the session and /me reflects it', async () => {
   const anonymous = await call('/me', { cookie: '' });
   assert.equal(anonymous.status, 200, 'the session probe answers, it does not error');

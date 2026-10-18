@@ -42,29 +42,36 @@ export async function landing() {
   const featured = services.slice(0, 10);
 
   const body = `
-  <div class="container" style="padding-top:28px">
-    <section class="hero reveal">
-      <div class="hero-grid">
-        <div>
-          <p class="eyebrow">${esc(t('landing.eyebrow'))}</p>
-          <h1 class="display">${esc(t('landing.headline'))}</h1>
-          <p style="margin-top:14px">${esc(t('landing.sub'))}</p>
-          <form class="hero-search" data-role="hero-search">
-            <div class="searchbar">
-              ${icon('Search_Magnifying_Glass')}
-              <input name="q" type="search" placeholder="${esc(t('landing.searchPlaceholder'))}" aria-label="${esc(t('landing.searchPlaceholder'))}" />
-              <button class="btn" type="submit">${esc(t('landing.searchBtn'))}</button>
-            </div>
-          </form>
-          <div class="hero-actions">
-            <button class="btn lg" data-action="start-booking">${icon('Calendar_Add')}${esc(t('landing.ctaPrimary'))}</button>
-            <a class="btn secondary lg" href="#/register?role=WORKER">${icon('Suitcase')}${esc(t('landing.ctaSecondary'))}</a>
+  <div class="container welcome">
+    <section class="hero welcome-hero reveal">
+      <div class="welcome-hero__media">
+        <img src="./assets/photos/home-cleaning.jpg" alt="" width="1600" height="1067" />
+      </div>
+      <div class="welcome-hero__scrim" aria-hidden="true"></div>
+      <div class="welcome-hero__body">
+        <div class="welcome-hero__brand">
+          <span class="brand-mark">${icon('Map_Pin')}</span>
+          <span class="welcome-hero__name">${esc(t('brand.name'))}<small>${esc(t('landing.eyebrow'))}</small></span>
+        </div>
+        <h1 class="display">${esc(t('landing.headline'))}</h1>
+        <p>${esc(t('landing.sub'))}</p>
+        <form class="hero-search" data-role="hero-search">
+          <div class="searchbar">
+            ${icon('Search_Magnifying_Glass')}
+            <input name="q" type="search" placeholder="${esc(t('landing.searchPlaceholder'))}" aria-label="${esc(t('landing.searchPlaceholder'))}" />
+            <button class="btn" type="submit">${esc(t('landing.searchBtn'))}</button>
           </div>
-          ${stats ? statsRow(stats) : ''}
+        </form>
+        <div class="welcome-actions">
+          <button class="btn lg" data-action="open-register">${icon('Calendar_Add')}${esc(t('landing.ctaPrimary'))}</button>
+          <button class="btn secondary lg" data-action="open-login">${icon('User_01')}${esc(t('nav.signin'))}</button>
+          <button class="btn glass-dark lg" data-action="open-register" data-role="WORKER">${icon('Suitcase')}${esc(t('landing.ctaSecondary'))}</button>
         </div>
-        <div class="hero-art">
-          <img src="./assets/illustrations/hero-services.svg" alt="${esc(t('landing.headline'))}" width="640" height="520" />
+        <div class="welcome-trust">
+          ${[['Shield_Check', 'landing.trustVerified'], ['Tag', 'landing.trustClear'], ['Headphones', 'landing.trustSupport']].map(([ic, key]) => `
+            <span class="pill glass-dark">${icon(ic)}<span>${esc(t(key))}</span></span>`).join('')}
         </div>
+        ${stats ? statsRow(stats) : ''}
       </div>
     </section>
 

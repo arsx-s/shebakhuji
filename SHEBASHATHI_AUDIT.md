@@ -44,6 +44,15 @@ Original audit: 2026-10-16. Updated after the frontend rebuild and backend fixes
   review line already existed), verified end-to-end, and a new static check
   (`scripts/check-blocks.js`) fails the build whenever a markup block is built and
   never interpolated.
+- **Real maps replaced the drawn placeholder.** The old "map" was decorative CSS
+  grid paper with a pin at a fixed position — it looked like a map that knew
+  nothing. It is gone (with its styles). The map home, the booking wizard's
+  address step and a booking's own location are now MapLibre GL over a style the
+  server hands out (`MAP_STYLE_URL` → `GET /api/public/config`), with one shared
+  instance re-parented between screens rather than a new WebGL context per view.
+  Nothing is simulated: the pin is where the customer tapped, worker markers come
+  from real shared positions, and with no style configured both the map pane and
+  the wizard show an honest unavailable card instead of art.
 
 ### Backend
 
@@ -111,8 +120,12 @@ A Lighthouse pass over every screen surfaced real defects, all now fixed:
 - **No payment gateway.** Totals, invoices and ledger entries are recorded, but
   no money moves; the UI says "pay in cash / unpaid" rather than faking a charge.
 - **No SMS/email OTP.** `AUTH_MODE=development` password login only.
-- **No live map/GPS/ETA.** The booking map is a labelled approximation of the
-  saved address.
+- **No live GPS/ETA tracking.** Maps are real MapLibre GL maps over a style you
+  configure (`MAP_STYLE_URL`; see README). They show only locations people really
+  provided — a point the customer picked, a saved address, or a worker position
+  the worker shared — and there is no simulated movement, ETA or invented marker.
+  With no style configured the client shows an honest unavailable state, and map
+  tiles (cross-origin, never cached) require internet.
 - **Single-process JSON store.** No transactions or cross-process locking; two
   server processes will clobber each other. Migration path in
   `DATABASE_ARCHITECTURE.md`.

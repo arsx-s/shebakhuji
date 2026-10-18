@@ -36,6 +36,20 @@ adb install -r dist/ShebaShathi-debug.apk
 - Production builds must use HTTPS. Android blocks cleartext HTTP by default
   except where the debug manifest allows it.
 
+## Maps inside the app
+
+The map is MapLibre GL, vendored into `assets/vendor/maplibre/` and copied into
+`www/` by `npm run web:prepare` (`npm run vendor:map` runs first, so the native
+bundle never depends on a CDN). Accelerated WebGL is used when the device has it;
+Android System WebView otherwise falls back to its software renderer, which is
+slower but does not break the layout.
+
+Map tiles are fetched over the network from the configured style
+(`MAP_STYLE_URL` on the server, handed to the client through
+`GET /api/public/config`). An emulator without internet, or a device with no
+connection, shows the honest offline tile notice rather than a stale map — tiles
+are cross-origin and are deliberately **not** cached by the service worker.
+
 ## Status in this workspace
 
 The web bundle and Capacitor sync can be prepared, but **the APK was not built

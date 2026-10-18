@@ -8,6 +8,7 @@ import { esc, icon, sheet, closeSheet, toast, setBusy, t } from '../ui.js';
 import { getState, setState } from '../store.js';
 import { getLang } from '../i18n.js';
 import { homeFor } from '../shell.js';
+import { destroyMap } from '../map.js';
 import { go } from '../router.js';
 
 const DEMO_ACCOUNTS = [
@@ -40,7 +41,7 @@ function clearErrors(root) {
   root.querySelectorAll('[aria-invalid]').forEach((e) => e.removeAttribute('aria-invalid'));
 }
 
-export function openAuth(mode = 'login', { role = 'CUSTOMER' } = {}) {
+export function openAuth(mode = 'login', { role = 'CUSTOMER', onClose } = {}) {
   const register = mode === 'register';
   let selectedRole = role === 'WORKER' ? 'WORKER' : 'CUSTOMER';
 
@@ -88,7 +89,7 @@ export function openAuth(mode = 'login', { role = 'CUSTOMER' } = {}) {
       <button class="btn ghost sm" data-action="auth-switch" data-mode="${register ? 'login' : 'register'}">${esc(t(register ? 'nav.signin' : 'nav.register'))}</button>
     </p>`;
 
-  const dialog = sheet({ title: t(register ? 'auth.registerTitle' : 'auth.signinTitle'), subtitle: t(register ? 'auth.registerSub' : 'auth.signinSub'), body });
+  const dialog = sheet({ title: t(register ? 'auth.registerTitle' : 'auth.signinTitle'), subtitle: t(register ? 'auth.registerSub' : 'auth.signinSub'), body, onClose });
   const form = dialog.body.querySelector('[data-role="auth-form"]');
   form.addEventListener('submit', (event) => submitAuth(event, { register }));
   return dialog;
@@ -165,6 +166,7 @@ export async function refreshMe() {
 export async function signOut() {
   try { await api.logout(); } catch { /* session already gone */ }
   clearToken();
+  destroyMap(); // release the WebGL context: the next user gets a fresh map
   setState({ user: null, notifications: [] });
   toast(t('account.signedOut'), 'info');
   if (window.location.hash === '#/') window.dispatchEvent(new HashChangeEvent('hashchange'));
