@@ -465,18 +465,39 @@ register('delete-account', async () => {
     danger: true
   });
   if (!ok) return;
-  const password = window.prompt(t('settings.currentPassword'));
-  if (!password) return;
-  try {
-    await api.deleteAccount(password);
-    toast(t('settings.accountDeleted'), 'success');
-    // Clear session and return to auth screen
-    clearToken();
-    setState({ user: null, notifications: [] });
-    navigate('#/');
-  } catch (error) {
-    toast(error instanceof ApiError ? error.message : t('auth.errGeneric'), 'error');
-  }
+  // Use an in-app dialog instead of window.prompt
+  const dialog = sheet({
+    title: t('settings.deleteAccount'),
+    subtitle: t('settings.deleteAccountBody'),
+    body: `<form data-role="delete-account-form" novalidate>
+      <div class="field"><label for="del-pw">${esc(t('settings.currentPassword'))}</label>
+        <input id="del-pw" name="password" type="password" required minlength="8" autocomplete="current-password" /></div>
+      <div class="row" style="justify-content:flex-end;margin-top:14px">
+        <button class="btn danger" type="submit">${esc(t('settings.deleteAccount'))}</button>
+      </div>
+    </form>`,
+    onClose: () => {}
+  });
+  const form = dialog.body.querySelector('[data-role="delete-account-form"]');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button[type="submit"]');
+    const pw = new FormData(form).get('password');
+    if (!pw) return;
+    setBusy(btn, true, t('common.loading'));
+    try {
+      await api.deleteAccount(String(pw));
+      toast(t('settings.accountDeleted'), 'success');
+      clearToken();
+      setState({ user: null, notifications: [] });
+      closeSheet();
+      navigate('#/');
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : t('auth.errGeneric'), 'error');
+    } finally {
+      setBusy(btn, false);
+    }
+  });
 });
 register('revoke-sessions', async () => {
   const ok = await confirm({ title: t('settings.signOutAll'), body: t('settings.signOutAllBody'), confirmLabel: t('settings.signOutAll') });

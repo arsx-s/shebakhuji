@@ -240,7 +240,7 @@ export async function publicSupport() {
 export function notFoundPublic() {
   const user = getState().user;
   const home = user ? homeFor(user.role) : '#/';
-  const art = 'assets/illustrations/empty-search.svg';
+  const art = 'assets/illustrations/error-404.svg';
   return {
     body: `<div class="container" style="padding-top:60px;max-width:560px;margin:0 auto;text-align:center">
       <img src="./${attr(art)}" alt="" style="width:min(280px,70vw);height:auto;margin:0 auto 16px;display:block" loading="lazy" />

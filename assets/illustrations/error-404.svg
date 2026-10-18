@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 320" width="400" height="320" role="img" aria-label="Page not found">
+  <title>Page not found</title>
+  <!-- monochrome 404 illustration: confused character + numerals -->
+  <g fill="none" stroke="#111114" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 404 numerals -->
+    <text x="200" y="95" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="800" text-anchor="middle" fill="#111114" stroke="none">404</text>
+    <!-- character head -->
+    <circle cx="200" cy="200" r="46" fill="#F6F6F7" />
+    <!-- eyes -->
+    <circle cx="184" cy="192" r="4" fill="#111114" stroke="none" />
+    <circle cx="216" cy="192" r="4" fill="#111114" stroke="none" />
+    <!-- confused mouth -->
+    <path d="M 186 216 Q 200 208 214 216" />
+    <!-- arms up (confused) -->
+    <path d="M 160 230 L 140 200" />
+    <path d="M 240 230 L 260 200" />
+    <!-- body -->
+    <path d="M 200 246 L 200 280" />
+    <path d="M 200 280 L 175 305" />
+    <path d="M 200 280 L 225 305" />
+    <!-- question marks -->
+    <text x="120" y="170" font-family="system-ui, sans-serif" font-size="28" font-weight="700" fill="#737373" stroke="none">?</text>
+    <text x="270" y="170" font-family="system-ui, sans-serif" font-size="28" font-weight="700" fill="#737373" stroke="none">?</text>
+  </g>
+</svg>

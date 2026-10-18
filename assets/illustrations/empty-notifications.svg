@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 320" width="400" height="320" role="img" aria-label="No notifications">
+  <title>No notifications</title>
+  <!-- monochrome empty-notifications illustration: character + bell -->
+  <g fill="none" stroke="#111114" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- bell -->
+    <path d="M 170 90 Q 170 60 200 60 Q 230 60 230 90 L 230 130 Q 230 150 245 160 L 155 160 Q 170 150 170 130 Z" fill="#F6F6F7" />
+    <line x1="155" y1="160" x2="245" y2="160" />
+    <circle cx="200" cy="175" r="8" fill="#111114" stroke="none" />
+    <!-- "no" slash -->
+    <line x1="160" y1="50" x2="240" y2="190" stroke="#A3A3A3" stroke-width="3" />
+    <!-- character -->
+    <circle cx="200" cy="230" r="30" fill="#F6F6F7" />
+    <circle cx="190" cy="224" r="3" fill="#111114" stroke="none" />
+    <circle cx="210" cy="224" r="3" fill="#111114" stroke="none" />
+    <path d="M 190 242 Q 200 236 210 242" />
+    <!-- body -->
+    <path d="M 200 260 L 200 290" />
+    <path d="M 200 290 L 180 310" />
+    <path d="M 200 290 L 220 310" />
+    <!-- arms -->
+    <path d="M 175 265 L 150 245" />
+    <path d="M 225 265 L 250 245" />
+  </g>
+</svg>

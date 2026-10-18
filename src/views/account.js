@@ -349,7 +349,7 @@ export async function inboxView(params, query = {}) {
               </div>
               ${n.bookingId ? `<button class="btn ghost sm" data-action="open-booking-detail" data-id="${esc(n.bookingId)}">${esc(t('activity.track'))}</button>` : ''}
             </div>`).join('')}</div>`
-            : emptyState({ art: 'assets/illustrations/empty-messages.svg', title: t('inbox.emptyNotifications'), body: t('inbox.emptyNotificationsBody'), action: `<button class="btn" data-action="refresh-notifications">${esc(t('inbox.checkAgain'))}</button>` })}
+            : emptyState({ art: 'assets/illustrations/empty-notifications.svg', title: t('inbox.emptyNotifications'), body: t('inbox.emptyNotificationsBody'), action: `<button class="btn" data-action="refresh-notifications">${esc(t('inbox.checkAgain'))}</button>` })}
         </section>`}
     </div>`;
   return { body, chrome: 'app', active: 'inbox', after: () => observeReveals() };
